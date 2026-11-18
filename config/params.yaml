@@ -36,10 +36,9 @@ data:
         - {type: yahoo, tickers: ["EWL"], currency: USD}                   # iShares MSCI Switzerland (from 1996)
     BOND_CHF:
       label: "CHF government bonds"
-      sources:                                                             # synthetic 10y index: carry - duration x change in yield
-        - {type: snb_yield, cube: "rendoblim", code: "10J", duration: 8.0}  # SNB monthly, from 1988 (stops in 2025)
-        - {type: snb_yield, cube: "rendoblid", code: "10J", duration: 8.0}  # SNB daily, month-end value (to today)
-        - {type: fred_yield, series: "IRLTLT01CHM156N", duration: 8.0, currency: CHF}  # OECD Swiss 10y via FRED, last resort
+      sources:
+        - {type: yahoo, tickers: ["CSBGC0.SW"], currency: CHF}               # iShares Swiss Domestic Government Bond 7-15 (CH): real ETF, month-end prices
+        - {type: snb_yield, cube: "rendoblim", code: "10J", duration: 9.0}  # before the ETF exists: synthetic index from the SNB 10y Confederation yield
     BOND_GLB_H:
       label: "Global bonds (US Treasuries, hedged to CHF)"
       sources:
