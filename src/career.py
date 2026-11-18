@@ -1,4 +1,4 @@
-"""Member 2: career model.
+"""Career model.
 
 Return on human capital = beta_bond * bond excess return
                         + beta_sector * sector excess return + noise.

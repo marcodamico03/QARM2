@@ -18,23 +18,24 @@ streamlit run app.py
 
 ## Project structure
 
-| Path | What it contains | Owner |
-|---|---|---|
-| `app.py` | Streamlit home page | Member 5 |
-| `pages/` | One file per app page | Member 5 |
-| `config/params.yaml` | Shared parameters used by every module | Everyone |
-| `src/data.py` | Downloads, cleaning, CHF conversion | Member 1 |
-| `src/career.py` | Career model and human capital | Member 2 |
-| `src/optimizer.py` | Black-Litterman, constrained solver, shadow prices | Member 3 |
-| `src/backtest.py` | Walk-forward backtest and metrics | Member 4 |
-| `data/` | Saved data, so the app works if a website is down | Member 1 |
-| `notebooks/` | Tests and experiments | Everyone |
-| `docs/` | Concept note and documentation | Everyone |
+| Path | What it contains |
+|---|---|
+| `app.py` | Streamlit home page |
+| `pages/` | One file per app page |
+| `config/params.yaml` | Shared parameters used by every module |
+| `src/data.py` | Downloads, cleaning, CHF conversion |
+| `src/career.py` | Career model and human capital |
+| `src/optimizer.py` | Black-Litterman, constrained solver, shadow prices |
+| `src/backtest.py` | Walk-forward backtest and metrics |
+| `data/` | Saved data, so the app works if a website is down |
+| `notebooks/` | Tests and experiments |
+| `docs/` | Concept note and documentation |
 
 ## How we work with Git
 
 1. `main` always contains a version that works.
-2. Each member works on their own branch.
-3. Work is added to `main` through a pull request, checked by another member.
+2. Everyone works on everything, each on their own branch. Pull the latest `main`
+   before starting and tell the group which file you are changing.
+3. Work is added to `main` through a small pull request, checked by someone else.
 4. All modules read their settings from `config/params.yaml`, never from numbers
    typed inside the code.
