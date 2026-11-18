@@ -1,0 +1,30 @@
+# Shared parameter file.
+# Every module reads its settings from here, so the three phases and the
+# backtest always use the same assumptions. Values marked TODO are placeholders
+# to be decided by the group.
+
+data:
+  start_date: "2000-01-01"   # early start so 2008 is out-of-sample
+  base_currency: "CHF"
+  frequency: "monthly"
+
+client:                      # default persona: the Zurich banker
+  age: 35
+  retirement_age: 65
+  salary_chf: null           # TODO
+  portfolio_chf: 100000
+  pension_chf: null          # TODO
+
+career:
+  beta_bond: null            # TODO (can be above 1 because of duration)
+  beta_sector: null          # TODO (choose a conservative value)
+
+optimization:
+  gamma: null                # TODO: calibrate so a no-career client holds 60/40
+  long_only: true
+  max_leverage: 1.0
+
+backtest:
+  window_months: 60
+  transaction_cost_bp: 10
+  job_loss_threshold: 0.30   # tested from 0.20 to 0.40
