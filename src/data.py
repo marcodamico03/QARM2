@@ -7,6 +7,7 @@ Main entry point for the other modules:
 
     from src.data import load_returns
     returns = load_returns()          # monthly CHF returns, one column per asset + "rf"
+    rf = load_rf()                    # the "rf" column only
 
 Run this file directly to download everything again and print a coverage report:
 
@@ -20,7 +21,8 @@ import warnings
 import numpy as np
 import pandas as pd
 import requests
-import yaml
+
+from src.config import load_params
 
 # Folder of the project (one level above src/)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,19 +30,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KF_URL = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/{file}_CSV.zip"
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
 SNB_URL = "https://data.snb.ch/api/cube/{cube}/data/csv/en"
+# Newer SNB cubes return only about one month unless dimSel and fromDate are given.
+SNB_URL_SELECT = "https://data.snb.ch/api/cube/{cube}/data/csv/en?dimSel={dim_sel}&fromDate={from_date}"
 
 
 # =============================================================================
 # 1. Parameters and small helpers
 # =============================================================================
-
-def load_params(path=None):
-    """Read the shared parameter file config/params.yaml."""
-    if path is None:
-        path = os.path.join(ROOT, "config", "params.yaml")
-    with open(path, "r") as f:
-        return yaml.safe_load(f)
-
 
 def _data_folder(params):
     folder = os.path.join(ROOT, params["data"].get("folder", "data"))
@@ -165,9 +161,14 @@ def _parse_snb_csv(text, code):
     return series.dropna()
 
 
-def download_snb(cube, code):
-    """Monthly series from the Swiss National Bank data portal (annual %)."""
-    response = requests.get(SNB_URL.format(cube=cube), timeout=60)
+def download_snb(cube, code, dim_sel=None, from_date="1980-01-01"):
+    """Series from the Swiss National Bank data portal (annual %).
+    dim_sel (e.g. "D0(CHF),D1(10J)") is needed for the cubes of the 2025 methodology."""
+    if dim_sel:
+        url = SNB_URL_SELECT.format(cube=cube, dim_sel=dim_sel, from_date=from_date)
+    else:
+        url = SNB_URL.format(cube=cube)
+    response = requests.get(url, timeout=60)
     response.raise_for_status()
     series = _parse_snb_csv(response.text, code)
     series.name = f"{cube}_{code}"
@@ -245,7 +246,7 @@ def source_returns(params, source, fx, chf_rf_level):
 
     if kind == "snb_yield":
         level = _cached(params, f"snb_{source['cube']}_{source['code']}",
-                        lambda: download_snb(source["cube"], source["code"]))
+                        lambda: download_snb(source["cube"], source["code"], source.get("dim_sel")))
         return synthetic_bond_returns(_to_monthly_last(_as_series(level)), source["duration"])
 
     if kind == "fred_yield":
@@ -377,8 +378,9 @@ def save_returns(returns, coverage, params=None):
     coverage.to_csv(os.path.join(folder, "coverage.csv"), index=False)
 
 
-def load_returns(refresh=False, params=None):
-    """Monthly CHF returns used by every other module.
+def load_returns(start=None, end=None, refresh=False, params=None):
+    """Monthly CHF returns used by every other module: one column per asset plus "rf".
+    start, end: optional dates "YYYY-MM-DD" to cut the period.
     By default reads the saved file data/returns_chf.csv (fast, works offline).
     refresh=True downloads everything again and overwrites the saved file."""
     if params is None:
@@ -387,8 +389,15 @@ def load_returns(refresh=False, params=None):
     if refresh or not os.path.exists(path):
         returns, coverage = build_returns(params)
         save_returns(returns, coverage, params)
-        return returns
-    return pd.read_csv(path, index_col=0, parse_dates=True)
+    else:
+        returns = pd.read_csv(path, index_col=0, parse_dates=True)
+    returns.index.name = "date"
+    return returns.loc[start:end]
+
+
+def load_rf(start=None, end=None, params=None):
+    """Monthly CHF risk-free rate (decimal, can be negative), as a Series."""
+    return load_returns(start, end, params=params)["rf"]
 
 
 def excess_returns(returns):

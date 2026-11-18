@@ -27,7 +27,11 @@ data:
       label: "European banks (banker's sector)"
       sources:
         - {type: yahoo, tickers: ["EXV1.DE"], currency: EUR}         # iShares STOXX Europe 600 Banks
-        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Banks", currency: USD}  # proxy for early years
+        # Longer European history, tried in this order before falling back to US banks.
+        # If Yahoo has no older data for a ticker, it is skipped automatically.
+        - {type: yahoo, tickers: ["EXX1.DE"], currency: EUR}         # iShares EURO STOXX Banks 30-15
+        - {type: yahoo, tickers: ["^SX7E"], currency: EUR}           # EURO STOXX Banks index (price only, no dividends)
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Banks", currency: USD}  # last resort: US banks
     swiss_equity:
       label: "Swiss equities"
       sources:
@@ -35,7 +39,10 @@ data:
     chf_bonds:
       label: "CHF government bonds"
       sources:
-        - {type: snb_yield, cube: "rendoblim", code: "10J", duration: 8.0}   # synthetic index from SNB 10y Confederation yield
+        # The SNB changed its yield methodology in July 2025: the old cube stops on 2025-07-31.
+        # New cube first; the old one fills the months before the new one starts.
+        - {type: snb_yield, cube: "rendeiduebd", code: "10J", dim_sel: "D0(CHF),D1(10J)", duration: 8.0}   # 2025 methodology
+        - {type: snb_yield, cube: "rendoblim", code: "10J", duration: 8.0}   # 2002 methodology, up to July 2025
     global_bonds_hedged:
       label: "Global bonds (US Treasuries, hedged to CHF)"
       sources:

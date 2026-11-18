@@ -77,20 +77,22 @@ Every time series is a `pandas.DataFrame` (or `Series`):
 
 ---
 
-## 2. Investable universe (proposal, tickers to be checked by the data owner)
+## 2. Investable universe
+
+Column names used everywhere (lowercase, as in `data/returns_chf.csv`). Sources,
+proxies and formulas are documented in `docs/data_layer.md`.
 
 | Column name | Asset | Role |
 |---|---|---|
-| `EQ_WORLD` | World equities (ex-financials where available) | Core equity |
-| `BANKS_EU` | European banks | The banker's sector |
-| `EQ_CH` | Swiss equities | Home market |
-| `BOND_CHF` | CHF government bonds | Bond-like part of the career |
-| `BOND_GLB_H` | Global bonds, CHF-hedged | Diversifying bonds |
-| `REIT_CH` | Swiss real estate | Real assets |
-| `GOLD` | Gold | Crisis hedge |
-| `EMPLOYER` | Employer stock (UBS), only when the client holds deferred shares | Lock-up constraint |
-
-Risk-free rate: `RF_CHF` (monthly CHF short rate), stored separately.
+| `world_equity` | World equities (MSCI World, includes financials) | Core equity |
+| `euro_banks` | European banks | The banker's sector, R_S |
+| `swiss_equity` | Swiss equities | Home market |
+| `chf_bonds` | CHF government bonds (synthetic, SNB 10y yield) | Bond-like part of the career, R_B |
+| `global_bonds_hedged` | Global bonds (US Treasuries), hedged to CHF | Diversifying bonds |
+| `swiss_real_estate` | Swiss listed real estate | Real assets |
+| `gold` | Gold | Crisis hedge |
+| `employer_stock` | UBS, only when the client holds deferred shares | Lock-up constraint |
+| `rf` | CHF risk-free rate (SARON), monthly, can be negative | Not an asset |
 
 ---
 
@@ -102,8 +104,9 @@ is free. If you need a new input, propose it in a pull request first.
 | File | Function | Input | Output |
 |---|---|---|---|
 | `src/config.py` | `load_params()` | none | `dict` with everything in `config/params.yaml` |
-| `src/data.py` | `load_returns(start, end)` | dates as `"YYYY-MM-DD"` | `DataFrame` of monthly CHF returns, columns from Section 2 |
-| `src/data.py` | `load_rf(start, end)` | dates | `Series` of the monthly CHF risk-free rate |
+| `src/data.py` | `load_returns(start=None, end=None, refresh=False)` | optional dates `"YYYY-MM-DD"` | `DataFrame` of monthly CHF returns: the asset columns plus `rf` (Section 2) |
+| `src/data.py` | `load_rf(start=None, end=None)` | optional dates | `Series` of the monthly CHF risk-free rate |
+| `src/data.py` | `excess_returns(returns)` | output of `load_returns` | asset returns minus `rf` (what the optimizer uses) |
 | `src/career.py` | `career_return(bond_ret, sector_ret, beta_bond, beta_sector)` | monthly excess-return `Series` | `Series` of the career's monthly excess return |
 | `src/career.py` | `human_capital(age, salary, params)` | age, annual salary in CHF | value of human capital H in CHF |
 | `src/optimizer.py` | `bl_expected_returns(cov, w_mkt, phi, P, Q, omega_views, tau)` | arrays | expected excess returns, `ndarray` (lab LN4 method) |
