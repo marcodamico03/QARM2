@@ -2,9 +2,10 @@ streamlit
 numpy
 pandas
 scipy
+statsmodels
 yfinance
 pandas-datareader
 scikit-learn
-cvxpy
 plotly
+matplotlib
 pyyaml
