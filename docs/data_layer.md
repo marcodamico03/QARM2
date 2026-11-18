@@ -10,8 +10,10 @@ python -m src.data          # downloads everything, prints a coverage report, sa
 ```
 
 ```python
-from src.data import load_returns, excess_returns
+from src.data import load_returns, load_rf, excess_returns
 returns = load_returns()        # monthly CHF returns, one column per asset + "rf" (reads the saved file)
+returns_2008 = load_returns("2008-01-01", "2008-12-31")   # optional period
+rf = load_rf()                  # CHF risk-free rate only
 excess = excess_returns(returns)
 ```
 
@@ -26,9 +28,9 @@ Raw downloads are saved in `data/raw/`. If a website is down, the saved copy is 
 | Asset (column) | Investable series | Long-history proxy (only before the investable series starts) |
 |---|---|---|
 | `world_equity` | URTH, iShares MSCI World (USD, from 2012) | Ken French developed-markets factor file: Mkt-RF + RF (USD, from 1990) |
-| `euro_banks` (the banker's sector, R_S) | EXV1.DE, iShares STOXX Europe 600 Banks (EUR) | Ken French 49 industries, "Banks" (US banks, USD) |
+| `euro_banks` (the banker's sector, R_S) | EXV1.DE, iShares STOXX Europe 600 Banks (EUR) | Tried in order: EXX1.DE (EURO STOXX Banks ETF), ^SX7E (EURO STOXX Banks index, price only), then Ken French "Banks" (US banks, USD) |
 | `swiss_equity` | EWL, iShares MSCI Switzerland (USD, from 1996) | not needed |
-| `chf_bonds` (R_B) | synthetic index from the SNB 10y Confederation yield, duration 8 | not needed |
+| `chf_bonds` (R_B) | synthetic index from the SNB 10y Confederation yield, duration 8: new cube `rendeiduebd` (2025 methodology), joined with the old cube `rendoblim` (stops on 2025-07-31) | not needed |
 | `global_bonds_hedged` | synthetic US 10y Treasury index (FRED DGS10), duration 8, hedged to CHF | not needed |
 | `swiss_real_estate` | equal-weight basket PSPN.SW, SPSN.SW, ALLN.SW (CHF) | not needed |
 | `gold` | GLD (USD, from 2004) | GC=F gold futures (from 2000) |
@@ -49,5 +51,6 @@ Rates and FX: CHF risk-free = SARON from the SNB data portal (cube `zimoma`). US
 2. **Global bonds = US Treasuries hedged.** It is a proxy for global bonds, and the history is consistent from 2000. Alternative: a global aggregate ETF, but those start around 2008.
 3. **Bond duration = 8** for both bond indices (`duration` in params.yaml).
 4. **Swiss real estate = three listed property companies** instead of the SXI real estate funds index, which has no free long history.
-5. **Proxy for euro_banks before 2001 is US banks.** Only a few months are affected.
-6. **SNB codes `10J` and `SARON` must be checked on the first real run.** If a code is wrong, the error message lists the available codes. Also check whether the SNB 10y yield is a month-end value or a monthly average; an average would make bond volatility look too low.
+5. **Proxy for euro_banks before 2008 was US banks.** EXV1.DE on Yahoo starts in February 2008, so in the first build US banks covered September 2000 to January 2008 (89 months), including the whole 60-month window before the 2008 crisis. Two European candidates (EXX1.DE, ^SX7E) are now tried first; check `data/coverage.csv` after a refresh to see which one was used. ^SX7E is a price index (no dividends), so its mean return is too low by roughly the dividend yield, but volatility and correlations, which drive the hedge, are fine.
+6. **The SNB changed its bond-yield methodology in July 2025.** The old cube `rendoblim` stops on 2025-07-31, which cut the whole table there (only complete months are kept). The new cube `rendeiduebd` is now tried first and needs a dimension selection (`dim_sel` in params.yaml). If its codes are wrong, the error message lists the available ones.
+7. **SNB codes `10J` and `SARON` must be checked on the first real run.** If a code is wrong, the error message lists the available codes. Also check whether the SNB 10y yield is a month-end value or a monthly average; an average would make bond volatility look too low.
