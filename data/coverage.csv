@@ -2,9 +2,10 @@ asset,source,from,to,months
 world_equity,Yahoo URTH,2012-02-29,2026-11-30,178
 world_equity,Ken French Developed_3_Factors,1990-07-31,2012-01-31,259
 euro_banks,Yahoo EXV1.DE,2008-02-29,2026-11-30,226
-euro_banks,Ken French 49_Industry_Portfolios [Banks],1971-02-28,2008-01-31,444
+euro_banks,Yahoo BNP.PA+SAN.MC+DBK.DE+INGA.AS+ISP.MI+BBVA.MC+GLE.PA+UCG.MI,1999-12-31,2008-01-31,98
+euro_banks,Ken French 49_Industry_Portfolios [Banks],1971-02-28,1999-11-30,346
 swiss_equity,Yahoo EWL,1999-12-31,2026-11-30,324
-chf_bonds,"SNB rendoblim 10J (synthetic, D=8.0)",1988-02-29,2025-07-31,450
+chf_bonds,"SNB rendeiduebd 10J (synthetic, D=8.0)",1988-02-29,2026-10-31,465
 global_bonds_hedged,"FRED DGS10 (synthetic, D=8.0, hedged)",1999-07-31,2026-11-30,329
 swiss_real_estate,Yahoo PSPN.SW+SPSN.SW+ALLN.SW,2000-02-29,2026-11-30,322
 gold,Yahoo GLD,2004-12-31,2026-11-30,264
