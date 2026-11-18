@@ -62,6 +62,13 @@ def _to_monthly_last(series):
     return monthly
 
 
+def last_complete_month(today=None):
+    """Month-end date of the last month that is already finished.
+    On 18 November 2026 this is 31 October 2026: November is not over yet."""
+    today = pd.Timestamp.today() if today is None else pd.Timestamp(today)
+    return (today.to_period("M") - 1).to_timestamp(how="end").normalize()
+
+
 def _cached(params, name, download_function):
     """Download a raw series and save it in data/raw/.
     If the download fails (website down, no internet), use the saved copy."""
@@ -310,7 +317,7 @@ def build_data(params=None, verbose=True):
     fx = build_fx(params)
     rf, rf_level = build_rf(params)
 
-    columns, coverage, removed_all = {}, [], []
+    columns, used_by_asset, removed_all = {}, {}, []
     for asset, spec in params["data"]["assets"].items():
         pieces = []
         for source in spec["sources"]:
@@ -326,24 +333,30 @@ def build_data(params=None, verbose=True):
             continue
         series, used = splice(pieces)
         columns[asset] = series
-        for i, source in enumerate(spec["sources"]):
-            months = used[used == i].index
-            if len(months):
-                coverage.append({"asset": asset, "source": describe_source(source),
-                                 "from": months.min().date(), "to": months.max().date(), "months": len(months)})
+        used_by_asset[asset] = used
 
     returns = pd.DataFrame(columns)
     returns.index.name = "date"
 
-    # --- Keep only the period where every column and the risk-free rate have data
+    # --- Keep only finished months where every column and the risk-free rate have data
     start = pd.Timestamp(params["data"]["start_date"]) + pd.offsets.MonthEnd(0)
     complete = returns.join(rf, how="inner").dropna()
-    first, last = max(start, complete.index.min()), complete.index.max()
+    first = max(start, complete.index.min())
+    last = min(complete.index.max(), last_complete_month())   # the current month is never included
     returns, rf = returns.loc[first:last], rf.loc[first:last]
     holes = returns.isna().sum()
     if holes.any():
         warnings.warn(f"Missing months inside the sample (left as NaN): {holes[holes > 0].to_dict()}")
 
+    # --- Which source was used for each asset, inside the final sample
+    coverage = []
+    for asset, used in used_by_asset.items():
+        used = used.loc[first:last]
+        for i, source in enumerate(params["data"]["assets"][asset]["sources"]):
+            months = used[used == i].index
+            if len(months):
+                coverage.append({"asset": asset, "source": describe_source(source),
+                                 "from": months.min().date(), "to": months.max().date(), "months": len(months)})
     coverage = pd.DataFrame(coverage)
     if verbose:
         print_report(params, returns, rf, coverage, removed_all)

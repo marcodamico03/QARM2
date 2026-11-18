@@ -21,6 +21,7 @@ excess = returns.sub(rf, axis=0)                     # what the optimizer uses
 - `data/returns_chf.csv`: monthly simple returns in CHF, in decimals. Index: month-end dates named `date`. Columns: `EQ_WORLD, BANKS_EU, EQ_CH, BOND_CHF, BOND_GLB_H, REIT_CH, GOLD, EMPLOYER`.
 - `data/rf_chf.csv`: `RF_CHF`, the CHF risk-free rate for the month (it can be negative).
 - Only months where every asset and the risk-free rate have data are kept, so there are no holes.
+- Only finished months are kept: on 18 November the last month is October, never the current month.
 - `data/coverage.csv`: which source is used for each asset and period.
 - `data/raw/`: raw downloads. If a website is down, the saved copy is used automatically.
 
@@ -33,7 +34,7 @@ For each asset, the first source has priority. The next sources only fill the mo
 | `EQ_WORLD` | URTH, iShares MSCI World (USD, from 2012) → Ken French developed markets, Mkt-RF + RF (USD) |
 | `BANKS_EU` (R_S) | EXV1.DE, iShares STOXX Europe 600 Banks (EUR; Yahoo history from 2008) → equal-weight basket of BNP, Santander, Deutsche Bank, ING, BBVA, Société Générale, Intesa (EUR) → Ken French US banks (last resort) |
 | `EQ_CH` | EWL, iShares MSCI Switzerland (USD, from 1996) |
-| `BOND_CHF` (R_B) | synthetic index, duration 8, from the SNB 10y Confederation yield: monthly cube `rendoblim` (stops in July 2025) → daily cube `rendoblid`, month-end value (to today) → OECD Swiss 10y yield on FRED (last resort) |
+| `BOND_CHF` (R_B) | CSBGC0.SW, iShares Swiss Domestic Government Bond 7-15 (CHF, month-end prices) → before the ETF exists: synthetic index, duration 9, from the SNB 10y Confederation yield (monthly cube `rendoblim`) |
 | `BOND_GLB_H` | synthetic US 10y Treasury index (FRED DGS10, daily, month-end value), duration 8, hedged to CHF |
 | `REIT_CH` | equal-weight basket of PSPN.SW, SPSN.SW, ALLN.SW (CHF) |
 | `GOLD` | GLD (USD, from 2004) → GC=F gold futures (from 2000) |
@@ -62,6 +63,6 @@ Rates and FX:
 
 1. **World equities include financials.** An ex-financials world index with history from 2000 is not freely available. Banks are about 10% of MSCI World, so the hedge appears as "zero in BANKS_EU".
 2. **Global bonds = US Treasuries hedged.** Global aggregate ETFs only start around 2008.
-3. **Bond duration = 8** for both bond indices (`duration` in params.yaml).
+3. **Bond duration**: 9 for the CHF proxy (close to the 7-15 ETF), 8 for US Treasuries (`duration` in params.yaml).
 4. **Swiss real estate = three listed property companies** instead of the SXI real estate funds index, which has no free long history.
-5. **The SNB monthly cube may be an average** rather than a month-end value. The daily cube gives month-end values, but is used only after July 2025.
+5. **No monthly averages after the ETF starts**: BOND_CHF uses real month-end ETF prices. The SNB monthly yield, used only before the ETF exists, should still be checked (month-end value or monthly average).
