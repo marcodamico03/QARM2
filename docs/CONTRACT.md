@@ -1,6 +1,6 @@
 # Team contract
 
-The shared rules every member follows, so that code written separately on five
+The shared rules everyone follows, so that code written separately on different
 branches fits together when it is merged. **Status: proposal.** Approve or comment
 in the pull request. Once merged, changes go through a new pull request only.
 
@@ -77,7 +77,7 @@ Every time series is a `pandas.DataFrame` (or `Series`):
 
 ---
 
-## 2. Investable universe (proposal, tickers to be checked by the data owner)
+## 2. Investable universe
 
 | Column name | Asset | Role |
 |---|---|---|
@@ -96,7 +96,7 @@ Risk-free rate: `RF_CHF` (monthly CHF short rate), stored separately.
 
 ## 3. Function contract
 
-Names, inputs and outputs everyone codes against. Inside a function, each owner
+Names, inputs and outputs everyone codes against. Inside a function, the author
 is free. If you need a new input, propose it in a pull request first.
 
 | File | Function | Input | Output |
@@ -128,11 +128,14 @@ and output (for example `optimal_portfolio` returning equal weights).
 ## 5. Git rules
 
 1. `main` always works. Nobody commits directly to `main`.
-2. Each member works on their own branch and edits **only their own file(s)**.
+2. Everyone works on everything, each on their own branch. Before starting a piece of
+   work, pull the latest `main` and tell the group which file you are changing, so two
+   people do not edit the same function at the same time.
 3. Shared files (`docs/CONTRACT.md`, `config/params.yaml`, `requirements.txt`,
    `src/config.py`) change only through a pull request everyone can see.
 4. Bring the latest `main` into your branch often (`git pull origin main`).
-5. Small pull requests: one piece of work each, tested, reviewed by one other member.
+5. Small pull requests: one piece of work each, tested, reviewed by someone else, and
+   merged quickly, so branches do not drift apart.
 6. Commit messages say what changed, for example "Add load_returns with CHF conversion".
 7. Never commit passwords or API keys.
 
@@ -150,15 +153,3 @@ Every function gets a small test with a known answer, in `notebooks/` or as a
   in Section 1.2.
 - **Backtest:** the wrong-beta curve must match `h * (2 * beta - h)` in the
   unconstrained case.
-
----
-
-## 7. Roles
-
-| Role | Files | Member |
-|---|---|---|
-| 1. Data | `src/data.py`, `data/` | TODO |
-| 2. Career | `src/career.py` | TODO |
-| 3. Optimizer | `src/optimizer.py` | TODO |
-| 4. Backtest | `src/backtest.py` | TODO |
-| 5. App | `app.py`, `pages/` | TODO |
