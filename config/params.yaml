@@ -6,64 +6,68 @@
 data:
   start_date: "2000-01-01"   # early start so 2008 is out-of-sample (first 60-month window ends ~2005)
   base_currency: "CHF"
-  frequency: "monthly"       # all returns are month-end to month-end
+  frequency: "monthly"       # all returns are month-end to month-end, simple returns, decimals
   folder: "data"             # saved copies, so the app works offline
-  max_abs_monthly_return: 0.60   # cleaning: any |monthly return| above this is flagged as a data error
+  max_abs_monthly_return_ticker: 0.60   # cleaning: a single stock/ETF above this in one month = data error (set to NaN)
+  warn_abs_monthly_return: 0.40         # report: asset months above this are printed for a manual check
 
   # ---------------------------------------------------------------------------
-  # Investable universe (proposal, section 3.2).
-  # Each asset has an ordered list of sources. The FIRST source is the investable
-  # one (ETF or stock); the following ones are long-history proxies used only for
-  # the months before the first source exists ("splicing").
-  # Every series is converted to CHF. Proxies are documented in the coverage report.
+  # Investable universe (CONTRACT.md, section 2: the keys are the column names).
+  # Each asset has an ordered list of sources. The FIRST source has priority
+  # wherever it has data; the next sources only fill the months it is missing
+  # (before it starts, after it ends, or a month removed by the cleaning).
+  # Every series is converted to CHF. data/coverage.csv shows what was used.
   # ---------------------------------------------------------------------------
   assets:
-    world_equity:
+    EQ_WORLD:
       label: "World equities"
       sources:
-        - {type: yahoo, tickers: ["URTH"], currency: USD}            # iShares MSCI World (from 2012)
-        - {type: kf_market, file: "Developed_3_Factors", currency: USD}   # Ken French developed markets (from 1990)
-    euro_banks:
-      label: "European banks (banker's sector)"
+        - {type: yahoo, tickers: ["URTH"], currency: USD}                  # iShares MSCI World (from 2012)
+        - {type: kf_market, file: "Developed_3_Factors", currency: USD}    # Ken French developed markets (from 1990)
+    BANKS_EU:
+      label: "European banks (the banker's sector)"
       sources:
-        - {type: yahoo, tickers: ["EXV1.DE"], currency: EUR}         # iShares STOXX Europe 600 Banks
-        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Banks", currency: USD}  # proxy for early years
-    swiss_equity:
+        - {type: yahoo, tickers: ["EXV1.DE"], currency: EUR}               # iShares STOXX Europe 600 Banks (Yahoo history from 2008)
+        - {type: yahoo, tickers: ["BNP.PA", "SAN.MC", "DBK.DE", "INGA.AS", "BBVA.MC", "GLE.PA", "ISP.MI"], currency: EUR}  # equal-weight large euro-area banks, before 2008
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Banks", currency: USD}  # last resort: US banks
+    EQ_CH:
       label: "Swiss equities"
       sources:
-        - {type: yahoo, tickers: ["EWL"], currency: USD}             # iShares MSCI Switzerland (from 1996)
-    chf_bonds:
+        - {type: yahoo, tickers: ["EWL"], currency: USD}                   # iShares MSCI Switzerland (from 1996)
+    BOND_CHF:
       label: "CHF government bonds"
-      sources:
-        - {type: snb_yield, cube: "rendoblim", code: "10J", duration: 8.0}   # synthetic index from SNB 10y Confederation yield
-    global_bonds_hedged:
+      sources:                                                             # synthetic 10y index: carry - duration x change in yield
+        - {type: snb_yield, cube: "rendoblim", code: "10J", duration: 8.0}  # SNB monthly, from 1988 (stops in 2025)
+        - {type: snb_yield, cube: "rendoblid", code: "10J", duration: 8.0}  # SNB daily, month-end value (to today)
+        - {type: fred_yield, series: "IRLTLT01CHM156N", duration: 8.0, currency: CHF}  # OECD Swiss 10y via FRED, last resort
+    BOND_GLB_H:
       label: "Global bonds (US Treasuries, hedged to CHF)"
       sources:
-        - {type: fred_yield, series: "DGS10", duration: 8.0, currency: USD, hedged: true, foreign_rf: "DTB3"}   # daily series, month-end value
-    swiss_real_estate:
+        - {type: fred_yield, series: "DGS10", duration: 8.0, currency: USD, hedged: true, foreign_rf: "DTB3"}   # daily, month-end value
+    REIT_CH:
       label: "Swiss real estate"
       sources:
-        - {type: yahoo, tickers: ["PSPN.SW", "SPSN.SW", "ALLN.SW"], currency: CHF}   # equal-weight basket of listed property companies
-    gold:
+        - {type: yahoo, tickers: ["PSPN.SW", "SPSN.SW", "ALLN.SW"], currency: CHF}   # equal-weight listed property companies
+    GOLD:
       label: "Gold"
       sources:
-        - {type: yahoo, tickers: ["GLD"], currency: USD}             # SPDR Gold (from 2004)
-        - {type: yahoo, tickers: ["GC=F"], currency: USD}            # gold futures (from 2000)
-    employer_stock:
+        - {type: yahoo, tickers: ["GLD"], currency: USD}                   # SPDR Gold (from 2004)
+        - {type: yahoo, tickers: ["GC=F"], currency: USD}                  # gold futures (from 2000)
+    EMPLOYER:
       label: "Employer stock (UBS)"
       sources:
-        - {type: yahoo, tickers: ["UBSG.SW"], currency: CHF}
-        - {type: yahoo, tickers: ["UBS"], currency: USD}             # NYSE listing, longer history
+        - {type: yahoo, tickers: ["UBSG.SW"], currency: CHF}               # history from 1999
+        - {type: yahoo, tickers: ["UBS"], currency: USD}                   # NYSE listing, fallback only
 
   # Which asset plays which role in the career model (proposal, section 3.1)
-  career_bond_asset: "chf_bonds"     # R_B
-  career_sector_asset: "euro_banks"  # R_S
+  career_bond_asset: "BOND_CHF"     # R_B
+  career_sector_asset: "BANKS_EU"   # R_S
 
   # ---------------------------------------------------------------------------
   # Rates and exchange rates
   # ---------------------------------------------------------------------------
   rates:
-    chf_rf: {type: snb_rate, cube: "zimoma", code: "SARON"}   # CHF risk-free rate (annual %, can be negative)
+    RF_CHF: {type: snb_rate, cube: "zimoma", code: "SARON"}   # CHF risk-free rate (annual %, can be negative)
   fx:                                   # FRED daily series, month-end value
     USDCHF: "DEXSZUS"                   # CHF per 1 USD
     EURUSD: "DEXUSEU"                   # USD per 1 EUR  (EURCHF = USDCHF x EURUSD)

@@ -1,53 +1,67 @@
 # Data layer (step 1): choices to discuss
 
-Code: `src/data.py`. Settings: `config/params.yaml` (section `data`).
+Code: `src/data.py` (follows `docs/CONTRACT.md`). Settings: `config/params.yaml`, section `data`. Tests: `notebooks/test_data.py`.
 
 ## How to use it
 
 ```bash
-pip install -r requirements.txt
-python -m src.data          # downloads everything, prints a coverage report, saves data/returns_chf.csv
+python -m src.data              # downloads everything, prints a coverage report, saves the files in data/
+python notebooks/test_data.py   # offline tests with known answers
 ```
 
 ```python
-from src.data import load_returns, excess_returns
-returns = load_returns()        # monthly CHF returns, one column per asset + "rf" (reads the saved file)
-excess = excess_returns(returns)
+from src.data import load_returns, load_rf
+returns = load_returns("2000-01-01", "2026-12-31")   # DataFrame, monthly CHF returns
+rf = load_rf("2000-01-01", "2026-12-31")             # Series RF_CHF
+excess = returns.sub(rf, axis=0)                     # what the optimizer uses
 ```
 
-## Output
+## Output (contract, sections 1.4 and 1.5)
 
-`data/returns_chf.csv`: month-end to month-end total returns **in CHF**, in decimals, one column per asset, plus `rf` (CHF risk-free rate for the month, can be negative). Only months where every column has data are kept, so there are no holes.
-Raw downloads are saved in `data/raw/`. If a website is down, the saved copy is used automatically.
-`data/coverage.csv` shows which source was used for each asset and period.
+- `data/returns_chf.csv`: monthly simple returns in CHF, in decimals. Index: month-end dates named `date`. Columns: `EQ_WORLD, BANKS_EU, EQ_CH, BOND_CHF, BOND_GLB_H, REIT_CH, GOLD, EMPLOYER`.
+- `data/rf_chf.csv`: `RF_CHF`, the CHF risk-free rate for the month (it can be negative).
+- Only months where every asset and the risk-free rate have data are kept, so there are no holes.
+- `data/coverage.csv`: which source is used for each asset and period.
+- `data/raw/`: raw downloads. If a website is down, the saved copy is used automatically.
 
 ## Universe and sources
 
-| Asset (column) | Investable series | Long-history proxy (only before the investable series starts) |
-|---|---|---|
-| `world_equity` | URTH, iShares MSCI World (USD, from 2012) | Ken French developed-markets factor file: Mkt-RF + RF (USD, from 1990) |
-| `euro_banks` (the banker's sector, R_S) | EXV1.DE, iShares STOXX Europe 600 Banks (EUR) | Ken French 49 industries, "Banks" (US banks, USD) |
-| `swiss_equity` | EWL, iShares MSCI Switzerland (USD, from 1996) | not needed |
-| `chf_bonds` (R_B) | synthetic index from the SNB 10y Confederation yield, duration 8 | not needed |
-| `global_bonds_hedged` | synthetic US 10y Treasury index (FRED DGS10), duration 8, hedged to CHF | not needed |
-| `swiss_real_estate` | equal-weight basket PSPN.SW, SPSN.SW, ALLN.SW (CHF) | not needed |
-| `gold` | GLD (USD, from 2004) | GC=F gold futures (from 2000) |
-| `employer_stock` | UBSG.SW (CHF) | UBS on NYSE (USD) |
+For each asset, the first source has priority. The next sources only fill the months it is missing: before it starts, after it ends, or a month removed by the cleaning.
 
-Rates and FX: CHF risk-free = SARON from the SNB data portal (cube `zimoma`). USDCHF and EURUSD from FRED daily series (DEXSZUS, DEXUSEU), month-end value.
+| Column | Sources, in order of priority |
+|---|---|
+| `EQ_WORLD` | URTH, iShares MSCI World (USD, from 2012) → Ken French developed markets, Mkt-RF + RF (USD) |
+| `BANKS_EU` (R_S) | EXV1.DE, iShares STOXX Europe 600 Banks (EUR; Yahoo history from 2008) → equal-weight basket of BNP, Santander, Deutsche Bank, ING, BBVA, Société Générale, Intesa (EUR) → Ken French US banks (last resort) |
+| `EQ_CH` | EWL, iShares MSCI Switzerland (USD, from 1996) |
+| `BOND_CHF` (R_B) | synthetic index, duration 8, from the SNB 10y Confederation yield: monthly cube `rendoblim` (stops in July 2025) → daily cube `rendoblid`, month-end value (to today) → OECD Swiss 10y yield on FRED (last resort) |
+| `BOND_GLB_H` | synthetic US 10y Treasury index (FRED DGS10, daily, month-end value), duration 8, hedged to CHF |
+| `REIT_CH` | equal-weight basket of PSPN.SW, SPSN.SW, ALLN.SW (CHF) |
+| `GOLD` | GLD (USD, from 2004) → GC=F gold futures (from 2000) |
+| `EMPLOYER` | UBSG.SW (CHF, from 1999) → UBS on NYSE (fallback only) |
+
+Rates and FX:
+- `RF_CHF`: SARON from the SNB data portal (cube `zimoma`).
+- USDCHF and EURUSD: FRED daily series DEXSZUS and DEXUSEU, month-end value.
 
 ## Formulas
 
 - Unhedged CHF return: (1 + r_CHF) = (1 + r_local)(1 + change in CHF per foreign unit).
-- Synthetic bond return: r_t = y_{t-1}/12 − D × (y_t − y_{t-1}).
+- Synthetic bond return: r_t = y_{t−1}/12 − D × (y_t − y_{t−1}).
 - Hedged return: r_local + (CHF rate − foreign rate)/12, both rates at the start of the month. From 2015 to 2022 this carry is negative.
-- Risk-free: rf_t = SARON at the end of month t−1 / 12.
+- Risk-free: RF_CHF_t = SARON at the end of month t−1, divided by 12.
+
+## Cleaning
+
+- A single stock or ETF with |monthly return| above 60% is treated as a data error and set to NaN, never 0.
+  - In a basket, the other tickers are used for that month.
+  - For a single-ticker asset, the next source fills the month.
+  - Example: PSPN.SW in May 2004 (+133% on Yahoo, a wrong adjustment) previously produced +45% for Swiss real estate.
+- Asset months above 40% are printed for a manual check. They can be real, for example UBS and the banks in April 2009.
 
 ## Open points for the group
 
-1. **World equities include financials.** An ex-financials world index with history from 2000 is not freely available. Banks are about 10% of MSCI World, so the hedge appears as "zero in euro_banks", not as "zero financials".
-2. **Global bonds = US Treasuries hedged.** It is a proxy for global bonds, and the history is consistent from 2000. Alternative: a global aggregate ETF, but those start around 2008.
+1. **World equities include financials.** An ex-financials world index with history from 2000 is not freely available. Banks are about 10% of MSCI World, so the hedge appears as "zero in BANKS_EU".
+2. **Global bonds = US Treasuries hedged.** Global aggregate ETFs only start around 2008.
 3. **Bond duration = 8** for both bond indices (`duration` in params.yaml).
 4. **Swiss real estate = three listed property companies** instead of the SXI real estate funds index, which has no free long history.
-5. **Proxy for euro_banks before 2001 is US banks.** Only a few months are affected.
-6. **SNB codes `10J` and `SARON` must be checked on the first real run.** If a code is wrong, the error message lists the available codes. Also check whether the SNB 10y yield is a month-end value or a monthly average; an average would make bond volatility look too low.
+5. **The SNB monthly cube may be an average** rather than a month-end value. The daily cube gives month-end values, but is used only after July 2025.

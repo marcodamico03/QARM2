@@ -1,12 +1,14 @@
 asset,source,from,to,months
-world_equity,Yahoo URTH,2012-02-29,2026-11-30,178
-world_equity,Ken French Developed_3_Factors,1990-07-31,2012-01-31,259
-euro_banks,Yahoo EXV1.DE,2008-02-29,2026-11-30,226
-euro_banks,Ken French 49_Industry_Portfolios [Banks],1971-02-28,2008-01-31,444
-swiss_equity,Yahoo EWL,1999-12-31,2026-11-30,324
-chf_bonds,"SNB rendoblim 10J (synthetic, D=8.0)",1988-02-29,2025-07-31,450
-global_bonds_hedged,"FRED DGS10 (synthetic, D=8.0, hedged)",1999-07-31,2026-11-30,329
-swiss_real_estate,Yahoo PSPN.SW+SPSN.SW+ALLN.SW,2000-02-29,2026-11-30,322
-gold,Yahoo GLD,2004-12-31,2026-11-30,264
-gold,Yahoo GC=F,2000-09-30,2004-11-30,51
-employer_stock,Yahoo UBSG.SW,1999-12-31,2026-11-30,324
+EQ_WORLD,Yahoo URTH,2012-02-29,2026-11-30,178
+EQ_WORLD,Ken French Developed_3_Factors,1990-07-31,2012-01-31,259
+BANKS_EU,Yahoo EXV1.DE,2008-02-29,2026-11-30,226
+BANKS_EU,Yahoo BNP.PA+SAN.MC+DBK.DE+INGA.AS+BBVA.MC+GLE.PA+ISP.MI,1999-12-31,2008-01-31,98
+BANKS_EU,Ken French 49_Industry_Portfolios [Banks],1971-02-28,1999-11-30,346
+EQ_CH,Yahoo EWL,1999-12-31,2026-11-30,324
+BOND_CHF,"SNB rendoblim 10J (synthetic, D=8.0)",1988-02-29,2025-07-31,450
+BOND_CHF,"FRED IRLTLT01CHM156N (synthetic, D=8.0)",1955-02-28,2026-10-31,411
+BOND_GLB_H,"FRED DGS10 (synthetic, D=8.0, hedged)",1999-07-31,2026-11-30,329
+REIT_CH,Yahoo PSPN.SW+SPSN.SW+ALLN.SW,2000-02-29,2026-11-30,322
+GOLD,Yahoo GLD,2004-12-31,2026-11-30,264
+GOLD,Yahoo GC=F,2000-09-30,2004-11-30,51
+EMPLOYER,Yahoo UBSG.SW,1999-12-31,2026-11-30,324
