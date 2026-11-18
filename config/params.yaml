@@ -27,10 +27,9 @@ data:
       label: "European banks (banker's sector)"
       sources:
         - {type: yahoo, tickers: ["EXV1.DE"], currency: EUR}         # iShares STOXX Europe 600 Banks
-        # Longer European history, tried in this order before falling back to US banks.
-        # If Yahoo has no older data for a ticker, it is skipped automatically.
-        - {type: yahoo, tickers: ["EXX1.DE"], currency: EUR}         # iShares EURO STOXX Banks 30-15
-        - {type: yahoo, tickers: ["^SX7E"], currency: EUR}           # EURO STOXX Banks index (price only, no dividends)
+        # Before EXV1.DE exists on Yahoo (Feb 2008): equal-weight basket of large euro-area banks,
+        # all in EUR and listed well before 2000 (closer to the banker's sector than US banks).
+        - {type: yahoo, tickers: ["BNP.PA", "SAN.MC", "DBK.DE", "INGA.AS", "ISP.MI", "BBVA.MC", "GLE.PA", "UCG.MI"], currency: EUR}
         - {type: kf_industry, file: "49_Industry_Portfolios", column: "Banks", currency: USD}  # last resort: US banks
     swiss_equity:
       label: "Swiss equities"

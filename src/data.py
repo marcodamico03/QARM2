@@ -229,8 +229,19 @@ def source_returns(params, source, fx, chf_rf_level):
         prices = _cached(params, "yahoo_" + "_".join(tickers), lambda: download_yahoo(tickers, start))
         if isinstance(prices, pd.Series):
             prices = prices.to_frame()
-        local = prices.pct_change(fill_method=None).mean(axis=1, skipna=True)   # equal weight if several tickers
-        local[prices.notna().sum(axis=1) == 0] = np.nan
+        ticker_returns = prices.pct_change(fill_method=None)
+        if ticker_returns.shape[1] > 1:
+            # Basket: check each member separately, because one bad price (for example an
+            # unadjusted share split) is diluted in the average and can pass the final check.
+            limit = params["data"].get("max_abs_monthly_return", 0.6)
+            bad = ticker_returns.abs() > limit
+            for ticker in bad.columns[bad.any()]:
+                dates = [d.date() for d in ticker_returns.index[bad[ticker]]]
+                warnings.warn(f"{ticker}: monthly return above {limit:.0%} on {dates}, "
+                              "dropped from the basket for that month (likely a data error).")
+            ticker_returns = ticker_returns.mask(bad)
+        local = ticker_returns.mean(axis=1, skipna=True)   # equal weight if several tickers
+        local[ticker_returns.notna().sum(axis=1) == 0] = np.nan
         local = local.where(prices.shift(1).notna().any(axis=1))                # no return without a previous price
         return to_chf(local, source["currency"], fx)
 
