@@ -33,6 +33,8 @@ FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
 SNB_URL = "https://data.snb.ch/api/cube/{cube}/data/csv/en"
 
 RETURNS_FILE = "returns_chf.csv"
+SECTORS_FILE = "sectors_chf.csv"
+
 RF_FILE = "rf_chf.csv"
 COVERAGE_FILE = "coverage.csv"
 
@@ -310,15 +312,16 @@ def splice(series_list):
 
 def build_data(params=None, verbose=True):
     """Download everything and build the monthly CHF returns.
-    Returns (returns, rf, coverage). Only months where every asset AND the
-    risk-free rate have data are kept, so there are no holes."""
+    Returns (returns, rf, coverage). `returns` has the core assets AND the sector menu.
+    Only months where every core asset and the risk-free rate have data are kept."""
     if params is None:
         params = load_params()
     fx = build_fx(params)
     rf, rf_level = build_rf(params)
 
+    specs = {**params["data"]["assets"], **params["data"].get("sectors", {})}   # core universe + sector menu
     columns, used_by_asset, removed_all = {}, {}, []
-    for asset, spec in params["data"]["assets"].items():
+    for asset, spec in specs.items():
         pieces = []
         for source in spec["sources"]:
             try:
@@ -338,9 +341,11 @@ def build_data(params=None, verbose=True):
     returns = pd.DataFrame(columns)
     returns.index.name = "date"
 
-    # --- Keep only finished months where every column and the risk-free rate have data
+    # --- Keep only finished months where every CORE asset and the risk-free rate have data
+    # (the sector menu never shortens the sample of the core universe)
     start = pd.Timestamp(params["data"]["start_date"]) + pd.offsets.MonthEnd(0)
-    complete = returns.join(rf, how="inner").dropna()
+    core = [a for a in params["data"]["assets"] if a in returns.columns]
+    complete = returns[core].join(rf, how="inner").dropna()
     first = max(start, complete.index.min())
     last = min(complete.index.max(), last_complete_month())   # the current month is never included
     returns, rf = returns.loc[first:last], rf.loc[first:last]
@@ -352,7 +357,7 @@ def build_data(params=None, verbose=True):
     coverage = []
     for asset, used in used_by_asset.items():
         used = used.loc[first:last]
-        for i, source in enumerate(params["data"]["assets"][asset]["sources"]):
+        for i, source in enumerate(specs[asset]["sources"]):
             months = used[used == i].index
             if len(months):
                 coverage.append({"asset": asset, "source": describe_source(source),
@@ -389,17 +394,21 @@ def print_report(params, returns, rf, coverage, removed):
 
 
 def update_data(params=None, verbose=True):
-    """Download everything again and overwrite the saved files in data/."""
+    """Download everything again and overwrite the saved files in data/:
+    core returns, sector menu, risk-free rate and coverage."""
     if params is None:
         params = load_params()
     returns, rf, coverage = build_data(params, verbose)
+    core = [a for a in params["data"]["assets"] if a in returns.columns]
+    sectors = [a for a in params["data"].get("sectors", {}) if a in returns.columns]
     folder = _data_folder(params)
-    returns.to_csv(os.path.join(folder, RETURNS_FILE))
+    returns[core].to_csv(os.path.join(folder, RETURNS_FILE))
+    returns[sectors].to_csv(os.path.join(folder, SECTORS_FILE))
     rf.to_frame().to_csv(os.path.join(folder, RF_FILE))
     coverage.to_csv(os.path.join(folder, COVERAGE_FILE), index=False)
     if verbose:
-        print(f"\nSaved {RETURNS_FILE}, {RF_FILE} and {COVERAGE_FILE} in {folder}")
-    return returns, rf
+        print(f"\nSaved {RETURNS_FILE}, {SECTORS_FILE}, {RF_FILE} and {COVERAGE_FILE} in {folder}")
+    return returns[core], rf
 
 
 def _read_saved(params, file):
@@ -418,6 +427,14 @@ def load_returns(start=None, end=None, params=None):
     if params is None:
         params = load_params()
     return _read_saved(params, RETURNS_FILE).loc[start:end]
+
+
+def load_sector_returns(start=None, end=None, params=None):
+    """Monthly CHF returns of the sector menu (SEC_FIN, SEC_TECH, ...), same index as
+    load_returns. Used when the client's career is tied to a sector other than BANKS_EU."""
+    if params is None:
+        params = load_params()
+    return _read_saved(params, SECTORS_FILE).loc[start:end]
 
 
 def load_rf(start=None, end=None, params=None):

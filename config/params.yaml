@@ -58,9 +58,57 @@ data:
         - {type: yahoo, tickers: ["UBSG.SW"], currency: CHF}               # history from 1999
         - {type: yahoo, tickers: ["UBS"], currency: USD}                   # NYSE listing, fallback only
 
+  # ---------------------------------------------------------------------------
+  # Sector menu: one investable sector per type of career, already downloaded, so a new
+  # client (a dentist, an engineer...) can be shown live without any download.
+  # Saved in data/sectors_chf.csv (load_sector_returns). US Select Sector SPDR ETFs,
+  # all available since December 1998, converted to CHF; Ken French industries before.
+  # ---------------------------------------------------------------------------
+  sectors:
+    SEC_FIN:
+      label: "Financials"
+      sources:
+        - {type: yahoo, tickers: ["XLF"], currency: USD}
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Fin", currency: USD}
+    SEC_TECH:
+      label: "Technology"
+      sources:
+        - {type: yahoo, tickers: ["XLK"], currency: USD}
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Softw", currency: USD}
+    SEC_HEALTH:
+      label: "Health care"
+      sources:
+        - {type: yahoo, tickers: ["XLV"], currency: USD}
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Hlth", currency: USD}
+    SEC_INDU:
+      label: "Industrials"
+      sources:
+        - {type: yahoo, tickers: ["XLI"], currency: USD}
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Mach", currency: USD}
+    SEC_CONS:
+      label: "Consumer discretionary (retail, hotels, restaurants)"
+      sources:
+        - {type: yahoo, tickers: ["XLY"], currency: USD}
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Rtail", currency: USD}
+    SEC_STAPLES:
+      label: "Consumer staples"
+      sources:
+        - {type: yahoo, tickers: ["XLP"], currency: USD}
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Food", currency: USD}
+    SEC_ENERGY:
+      label: "Energy"
+      sources:
+        - {type: yahoo, tickers: ["XLE"], currency: USD}
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "Oil", currency: USD}
+    SEC_MATERIALS:
+      label: "Materials and construction"
+      sources:
+        - {type: yahoo, tickers: ["XLB"], currency: USD}
+        - {type: kf_industry, file: "49_Industry_Portfolios", column: "BldMt", currency: USD}
+
   # Which asset plays which role in the career model (proposal, section 3.1)
   career_bond_asset: "BOND_CHF"     # R_B
-  career_sector_asset: "BANKS_EU"   # R_S
+  career_sector_asset: "BANKS_EU"   # R_S of the default client (each persona has its own, see personas)
 
   # ---------------------------------------------------------------------------
   # Rates and exchange rates
@@ -72,15 +120,46 @@ data:
     EURUSD: "DEXUSEU"                   # USD per 1 EUR  (EURCHF = USDCHF x EURUSD)
 
 client:                      # default persona: the Zurich banker
+  persona: "banker"          # one of the personas below
   age: 35
   retirement_age: 65
-  salary_chf: null           # TODO
+  salary_chf: 130000         # gross annual salary, mid-career banker in Zurich (assumption, slider in the app)
   portfolio_chf: 100000
-  pension_chf: null          # TODO
+  pension_chf: null          # TODO (step 3, glide path)
 
+# Presets for the app: change the client in seconds. sector = the asset R_S of the career
+# (BANKS_EU or a column of the sector menu; null = no sector exposure).
+# beta_sector is an assumption (wages have no market price, so it cannot be estimated from
+# the client's own data): small values on purpose, because overestimating it is costly
+# and underestimating it is not (proposal, section 4.2). pillar2 = false for self-employed.
+personas:
+  banker:           {label: "Banker, Zurich",          age: 35, salary_chf: 130000, sector: "BANKS_EU",   beta_sector: 0.15, pillar2: true}
+  tech_engineer:    {label: "Software engineer",       age: 32, salary_chf: 140000, sector: "SEC_TECH",   beta_sector: 0.15, pillar2: true}
+  dentist:          {label: "Dentist, self-employed",  age: 40, salary_chf: 180000, sector: "SEC_HEALTH", beta_sector: 0.05, pillar2: false}
+  factory_engineer: {label: "Engineer in industry",    age: 45, salary_chf: 115000, sector: "SEC_INDU",   beta_sector: 0.10, pillar2: true}
+  shop_owner:       {label: "Shop owner (florist)",    age: 38, salary_chf: 75000,  sector: "SEC_CONS",   beta_sector: 0.10, pillar2: false}
+  builder:          {label: "Construction worker",     age: 30, salary_chf: 80000,  sector: "SEC_MATERIALS", beta_sector: 0.10, pillar2: true}
+  energy_worker:    {label: "Energy sector employee",  age: 35, salary_chf: 110000, sector: "SEC_ENERGY", beta_sector: 0.15, pillar2: true}
+  civil_servant:    {label: "Civil servant",           age: 35, salary_chf: 100000, sector: null,         beta_sector: 0.00, pillar2: true}
+
+# Career model (proposal, section 3.1):
+#   career excess return = beta_bond x (BOND_CHF - rf) + beta_sector x (BANKS_EU - rf) + noise
+#   H = present value of the remaining salary until retirement
 career:
-  beta_bond: null            # TODO (can be above 1 because of duration)
-  beta_sector: null          # TODO (choose a conservative value)
+  beta_bond: auto            # "auto" = duration rule: (1 - wage_rate_link) x modified duration of the salary
+                             # stream / duration of BOND_CHF. A number here overrides the rule.
+  wage_rate_link: 0.5        # share of interest-rate moves that salaries follow (0 to 1). When rates rise with
+                             # inflation, wages tend to rise too, so the salary is NOT a fixed nominal bond.
+                             # 0 = salary treated as a fixed nominal bond (civil servant looks riskier than the
+                             # banker, unrealistic); 1 = no interest-rate risk at all. Group choice, slider in the app.
+  beta_sector: 0.15          # how much the career moves with the sector. Conservative on purpose:
+                             # overestimating it is costly, underestimating it is not (proposal, section 4.2)
+  bond_duration: 9.0         # modified duration of the bond index R_B (BOND_CHF = 7-15y CHF government bonds)
+  salary_growth: 0.015       # nominal salary growth per year
+  rf_long_run: 0.01          # long-run CHF risk-free rate used to discount the salary (annual)
+  bond_premium: 0.01         # expected excess return of R_B (annual)
+  sector_premium: 0.05       # expected excess return of R_S (annual)
+  # discount rate of H = rf_long_run + beta_bond x bond_premium + beta_sector x sector_premium
 
 optimization:
   gamma: null                # TODO: calibrate so a no-career client holds 60/40
