@@ -213,7 +213,29 @@ black_litterman:
                              #   - {assets: {EQ_CH: 1.0}, q: 0.05, sd: 0.10}                   Swiss equities earn 5% over cash
                              #   - {assets: {EQ_CH: 1.0, EQ_WORLD: -1.0}, q: 0.01, sd: 0.05}   Swiss beat world equities by 1%
 
+# Backtest (proposal, section 4): the client of params (the banker, 35 at the start) followed month
+# by month, each strategy decided with the past window only.
 backtest:
-  window_months: 60
-  transaction_cost_bp: 10
-  job_loss_threshold: 0.30   # tested from 0.20 to 0.40
+  window_months: 60          # estimation window: the first decision (Sep 2005) uses Sep 2000 - Aug 2005
+  transaction_cost_bp: 10    # cost = 10 bp x turnover
+  savings_rate: 0.10         # share of the gross salary added to the portfolio each month (assumption, slider)
+  job_loss_months: 12        # job-loss variant: months without salary after the job is lost
+  job_loss_thresholds: [0.20, 0.30, 0.40]   # the job is lost when the client's sector falls this much below its
+                                            # peak (30% central value, proposal 4.2); none in the main backtest
+  wrong_beta_multipliers: [0.0, 0.5, 1.0, 1.5, 2.0]   # true beta_sector = multiplier x assumed (proposal 4.2)
+  worst_months_share: 0.10   # "bad months" = the worst 10% months of the sector part of the career
+  bootstrap_block: 12        # circular block bootstrap: blocks of 12 months (crises last several months)
+  bootstrap_draws: 5000
+  bootstrap_seed: 0          # fixed: the backtest gives the same numbers on every run
+  crises:                    # first and last month, both included
+    "2008 financial crisis": ["2008-09", "2009-02"]
+    "2011 euro crisis": ["2011-07", "2011-09"]
+    "Jan 2015 CHF shock": ["2015-01", "2015-01"]
+    "COVID 2020": ["2020-02", "2020-03"]
+    "2022 rates and inflation": ["2022-01", "2022-09"]
+    "Credit Suisse 2023": ["2023-03", "2023-03"]
+  # Robustness of the prior: a Swiss pension-fund neutral portfolio instead of the global market
+  # portfolio. Pictet LPP-40 (2015 family) mapped onto our assets as in Roberto's stage 3.3: CHF bonds 30,
+  # hedged world bonds 10 + euro corporates 5, Swiss equities 15, global equities 20 + small caps 5 (of
+  # which banks 2.5), Swiss real estate 5; emerging bonds and hedge funds (no asset) removed. In %, rescaled.
+  swiss_prior: {BOND_CHF: 30.0, BOND_GLB_H: 15.0, EQ_CH: 15.0, EQ_WORLD: 22.5, BANKS_EU: 2.5, REIT_CH: 5.0}
