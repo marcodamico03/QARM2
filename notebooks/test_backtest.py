@@ -329,6 +329,50 @@ def test_significance_formulas():
     print("significance formulas OK (Newey-West, block bootstrap, fair same-wealth comparison)")
 
 
+def test_wrong_beta_theory():
+    # Known answer (proposal 4.2): one factor s, career exposure beta (true), portfolio short k
+    # of it in (C) and 0 in (D). With wealth shares sF (portfolio) and sH (career), the hedge in
+    # career units is h = sF k / sH, and the variance saved is exactly sH^2 h (2 beta - h) var(s)
+    # (exact with sample moments). So the CE gain is 12 x saved / (2 gamma): a straight line in
+    # beta, zero at beta = h / 2.
+    rng = np.random.default_rng(5)
+    dates = pd.date_range("2010-01-31", periods=120, freq="ME")
+    s = rng.normal(0, 0.05, 120)
+    s = s - s.mean()                                           # no mean effect: only risk matters
+    F, H, gamma, k = 100.0, 900.0, 0.25, 2.0
+    sF, sH = F / (F + H), H / (F + H)
+    h = sF * k / sH
+    rf = pd.Series(0.0, index=dates)
+    d = pd.DataFrame({"value": F, "return": 0.0}, index=dates)          # value constant: F/W constant
+    c = pd.DataFrame({"value": F, "return": -k * s}, index=dates)
+    gains = []
+    for beta in (0.0, h / 2, h, 2 * h):
+        path = pd.DataFrame({"H_start": H, "P": 0.0, "career_excess": beta * s}, index=dates)
+        a = B.total_wealth_excess(d, path, rf)
+        b = B.same_wealth_excess(c, d, path, rf)
+        gain = B.certainty_equivalent_return(b, gamma) - B.certainty_equivalent_return(a, gamma)
+        theory = 12 * sH ** 2 * h * (2 * beta - h) * np.var(s, ddof=1) / (2 * gamma)
+        assert abs(gain - theory) < 1e-12, (beta, gain, theory)
+        gains.append(gain)
+    assert gains[0] < 0 and abs(gains[1]) < 1e-12 and gains[2] > 0 and gains[3] > gains[2]
+    print("wrong-beta theory OK (gain = h(2 beta - h), break-even at beta = h/2)")
+
+
+def test_wrong_beta_on_saved_data():
+    params = load_params()
+    curve = B.wrong_beta_curve(params, draws=300)
+    gains = curve["CE gain C vs D (CHF per year)"].to_numpy()
+    # Almost a straight line in the true beta, as the theory says. Not exactly: a different true
+    # beta_sector also changes the career's discount rate, hence its value and wealth share.
+    m = curve.index.to_numpy()
+    slope, intercept = np.polyfit(m, gains, 1)
+    r2 = 1 - np.var(gains - (slope * m + intercept)) / np.var(gains)
+    assert r2 > 0.99, r2
+    assert slope > 0 and (np.diff(gains) > 0).all()            # the hedge is worth more when the exposure is real
+    print(f"wrong-beta on saved data OK (gain CHF {gains[0]:,.0f} at true beta 0 -> CHF {gains[-1]:,.0f} at 2x)")
+    return curve
+
+
 if __name__ == "__main__":
     test_constant_weights()
     test_costs_and_turnover()
@@ -342,4 +386,6 @@ if __name__ == "__main__":
     test_metric_formulas()
     test_metrics_on_saved_data()
     test_significance_formulas()
+    test_wrong_beta_theory()
+    test_wrong_beta_on_saved_data()
     print("ALL TESTS PASSED")

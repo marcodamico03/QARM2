@@ -407,3 +407,49 @@ def significance_table(results, path, rf, gamma, pairs=(("C", "A"), ("D", "A"), 
                      "95% interval low (CHF)": low * W_avg, "95% interval high (CHF)": high * W_avg,
                      "p-value (gain <= 0)": float((boot <= 0).mean())})
     return pd.DataFrame(rows).set_index("comparison")
+
+
+# =============================================================================
+# 4.5 Robustness, part 2: the wrong-beta curve (proposal, section 4.2)
+# =============================================================================
+
+def wrong_beta_curve(params=None, multipliers=(0.0, 0.5, 1.0, 1.5, 2.0), returns=None, rf=None,
+                     draws=2000, seed=0):
+    """Is the hedge right, or only consistent with itself?
+
+    The decisions of (C) and (D) are made with the ASSUMED beta_sector (params), as in reality.
+    The client's career is then replayed with a "true" beta_sector = multiplier x assumed, and the
+    fair gain of (C) over (D) (same wealth shares, certainty equivalent of total wealth) is
+    measured, in CHF per year on the average W of (D), with a block-bootstrap 95% interval.
+
+    Theory (unconstrained, one hedged factor): a hedge h against a true exposure beta saves
+    risk h (2 beta - h) x variance, a straight line in beta that breaks even at beta = h / 2.
+    Returns a DataFrame by multiplier."""
+    import copy
+    from src.config import load_params
+    from src.optimizer import client_assets
+    if params is None:
+        params = load_params()
+    if returns is None or rf is None:
+        from src.data import load_returns, load_rf, load_sector_returns
+        returns, rf = load_returns().join(load_sector_returns()), load_rf()
+    results, _, gamma = run_strategies(params, returns, rf, strategies=("C", "D"))
+    assets = client_assets(params)
+    excess = returns[assets].sub(rf, axis=0)
+    start = results["D"].index[0]
+    assumed = params["career"]["beta_sector"]
+    rows = []
+    for m in multipliers:
+        true_params = copy.deepcopy(params)
+        true_params["career"]["beta_sector"] = assumed * m
+        path = client_path(true_params, excess, start)
+        d_excess = total_wealth_excess(results["D"], path, rf)
+        c_excess = same_wealth_excess(results["C"], results["D"], path, rf)
+        gain, boot = block_bootstrap_ce_gain(d_excess, c_excess, gamma, draws=draws, seed=seed)
+        F = results["D"]["value"] / (1 + results["D"]["return"])
+        W = (F + path["H_start"] + path["P"]).mean()
+        low, high = np.percentile(boot, [2.5, 97.5])
+        rows.append({"multiplier": m, "true beta_sector": assumed * m, "CE gain C vs D (CHF per year)": gain * W,
+                     "95% interval low (CHF)": low * W, "95% interval high (CHF)": high * W,
+                     "p-value (gain <= 0)": float((boot <= 0).mean())})
+    return pd.DataFrame(rows).set_index("multiplier")
