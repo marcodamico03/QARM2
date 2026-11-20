@@ -183,8 +183,18 @@ optimization:
     BANKS_EU: 2.5
     REIT_CH: 5.0
     GOLD: 0.0
-  long_only: true
-  max_leverage: 1.0
+  long_only: true            # no short selling
+  max_leverage: 1.0          # sum of risky weights <= 1, the rest is cash (no borrowing)
+  # Position caps (proposal 3.2: x_i <= u_i). Without them a young client, whose career is ~97% of
+  # wealth, wants ~5x his portfolio; with "no borrowing" binding, the optimizer then puts 100% in the
+  # asset with the highest expected return (European banks). Group assumptions, sliders in the app.
+  position_caps:
+    BANKS_EU: 0.10           # a single sector
+    EQ_CH: 0.30              # home equity market
+    REIT_CH: 0.20            # real estate, less liquid
+    GOLD: 0.10
+    EMPLOYER: 0.0            # not bought freely: only held through deferred shares (lock-up, later)
+  sector_cap: 0.10           # cap for any column of the sector menu (SEC_TECH, ...) added for a persona
 
 backtest:
   window_months: 60

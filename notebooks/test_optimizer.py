@@ -144,6 +144,61 @@ def test_market_prior():
     print(f"market prior OK (phi {phi:.2f}, gamma {gamma:.3f}, neutral client holds the neutral portfolio)")
 
 
+def test_total_wealth():
+    import src.career as C
+    from src.config import load_params
+    from src.data import load_returns, load_rf
+    params = load_params()
+    excess = load_returns().sub(load_rf(), axis=0)
+    prior = O.market_prior(excess, params)
+    cov, pi, gamma, w0 = prior["cov"], prior["pi"], prior["gamma"], prior["w0"]
+    names = list(cov.columns)
+    zero = np.zeros(len(names))
+
+    # 1. No career (omega = 0): the client holds the neutral portfolio, with or without constraints
+    assert np.allclose(O.optimal_portfolio(pi, cov, zero, 0.0, gamma), w0, atol=1e-5)
+    cons = O.constraints_from_params(params, names)
+    assert np.allclose(O.optimal_portfolio(pi, cov, zero, 0.0, gamma, cons), w0, atol=1e-5)
+
+    # 2. The banker (age 35, salary 130k, portfolio 100k): without constraints the solver
+    #    finds the formula of the contract, starting from equal weights
+    p = C.params_for_persona(params, "banker")
+    beta_bond, beta_sector, _ = C.career_betas(35, p)
+    sigma_h = C.career_covariance(cov, beta_bond, beta_sector, p)
+    omega = O.omega_share(C.human_capital(35, 130_000, p), 100_000)
+    x_star, spec, hedge = O.formula_portfolio(pi, cov, sigma_h, omega, gamma)
+    x = O.optimal_portfolio(pi, cov, sigma_h, omega, gamma)
+    assert np.allclose(x, x_star, rtol=1e-6, atol=1e-6), np.abs(x - x_star).max()
+    # the hedge is "hold beta_bond less CHF bonds and beta_sector less banks", scaled by omega/(1-omega)
+    k = omega / (1 - omega)
+    expected_hedge = np.zeros(len(names))
+    expected_hedge[names.index("BOND_CHF")] = -k * beta_bond
+    expected_hedge[names.index("BANKS_EU")] = -k * beta_sector
+    assert np.allclose(hedge, expected_hedge, atol=1e-8)
+
+    # 3. With the client's constraints: valid weights, and the hedge holds no MORE banks or
+    #    CHF bonds than the same client without the hedge (strategy D = C without hedging term)
+    c = O.optimal_portfolio(pi, cov, sigma_h, omega, gamma, cons)
+    d = O.optimal_portfolio(pi, cov, zero, omega, gamma, cons)
+    for w in (c, d):
+        assert (w > -1e-8).all() and w.sum() < 1 + 1e-8
+        for a, cap in cons["upper"].items():
+            assert w[names.index(a)] <= cap + 1e-8
+    for a in ("BANKS_EU", "BOND_CHF"):
+        assert c[names.index(a)] <= d[names.index(a)] + 1e-6
+    assert d[names.index("BANKS_EU")] > c[names.index("BANKS_EU")] + 0.05      # visible: 10% -> 0%
+
+    # 4. A client with no sector (civil servant) is not pushed out of banks by the hedge
+    q = C.params_for_persona(params, "civil_servant")
+    bb, bs, _ = C.career_betas(35, q)
+    sh = C.career_covariance(cov, bb, bs, q)
+    om = O.omega_share(C.human_capital(35, 100_000, q), 100_000)
+    c2 = O.optimal_portfolio(pi, cov, sh, om, gamma, cons)
+    assert c2[names.index("BANKS_EU")] >= d[names.index("BANKS_EU")] - 1e-6
+    print(f"total-wealth optimization OK (banker: banks {d[names.index('BANKS_EU')]:.0%} without hedge, "
+          f"{c[names.index('BANKS_EU')]:.0%} with hedge)")
+
+
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning)   # fsolve progress messages
@@ -152,4 +207,5 @@ if __name__ == "__main__":
     test_mean_variance()
     test_covariance()
     test_market_prior()
+    test_total_wealth()
     print("ALL TESTS PASSED")

@@ -4,7 +4,7 @@ Built step by step, reusing the professor's lab code and notation (contract, sec
     1. Black-Litterman expected returns (lab LN4)
     2. Covariance on our data: sample and Ledoit-Wolf (labs LN1, LN3)
     3. Neutral portfolio, Black-Litterman prior and gamma (a client with no career holds it)
-    4. Total-wealth optimization with the career (proposal, section 3.2)
+    4. Total-wealth optimization with the career (proposal, section 3.2; contract 1.2)
     5. Shadow prices and risk contributions (lab LN5)
 
 Notation (contract, section 1.2 and 1.3):
@@ -141,7 +141,94 @@ def market_prior(excess_returns, params):
 
 
 # =============================================================================
-# 4. Mean-variance solver (lab LN1 code)
+# 4. Total-wealth optimization with the career (contract, section 1.2)
+# =============================================================================
+#
+#   Total wealth W = H + F (career + portfolio), omega = H / W (non-tradable share).
+#   R_W = (1 - omega) x'R + omega R_H, all in excess returns. Lab convention (gamma = tolerance):
+#       maximise gamma E[R_W] - 0.5 Var(R_W)
+#   Dividing by (1 - omega)^2 and dropping constants, the client minimises
+#       0.5 x' Sigma x + omega/(1-omega) x' sigma_H - gamma/(1-omega) x' mu
+#   whose unconstrained solution is the formula of the contract:
+#       x* = gamma/(1-omega) inv(Sigma) mu  -  omega/(1-omega) inv(Sigma) sigma_H
+#   The weights x are shares of the PORTFOLIO F; the rest (1 - sum x) is cash.
+
+def omega_share(human_capital, portfolio, other_non_tradable=0.0):
+    """omega = non-tradable wealth / total wealth. other_non_tradable: e.g. pension wealth P."""
+    non_tradable = human_capital + other_non_tradable
+    return non_tradable / (non_tradable + portfolio)
+
+
+def formula_portfolio(mu, cov, sigma_H, omega, gamma):
+    """Unconstrained optimum x* (contract 1.2), split into its two parts.
+    Returns (x*, speculative demand, hedging demand) as arrays."""
+    cov, mu, sigma_H = _array(cov), _array(mu), _array(sigma_H)
+    speculative = gamma / (1 - omega) * np.linalg.solve(cov, mu)
+    hedging = -omega / (1 - omega) * np.linalg.solve(cov, sigma_H)
+    return speculative + hedging, speculative, hedging
+
+
+def constraints_from_params(params, assets):
+    """The client's constraints from params (section optimization), for the given assets:
+    {"long_only": bool, "max_total": float or None, "upper": {asset: cap}, "lower": {asset: floor}}."""
+    opt = params["optimization"]
+    caps = dict(opt.get("position_caps", {}))
+    for a in assets:
+        if a.startswith("SEC_") and a not in caps:
+            caps[a] = opt.get("sector_cap", 1.0)
+    return {"assets": list(assets), "long_only": opt.get("long_only", True),
+            "max_total": opt.get("max_leverage", 1.0),
+            "upper": {a: c for a, c in caps.items() if a in assets}, "lower": {}}
+
+
+def optimal_portfolio(mu, cov, sigma_H, omega, gamma, constraints=None, x0=None, precise=True):
+    """Total-wealth optimal weights of the risky assets (contract, section 3); the rest is cash.
+
+    mu:       expected EXCESS returns (e.g. Black-Litterman), same order as cov
+    sigma_H:  Cov(R, R_H), from src.career.career_covariance (zeros = career ignored)
+    omega:    non-tradable share of total wealth (0 = a client with no career)
+    gamma:    risk tolerance (lab convention), the same in every strategy
+    constraints: dict from constraints_from_params; None = no constraint (gives the formula)
+    Returns an ndarray of weights."""
+    mu, cov, sigma_H = _array(mu), _array(cov), _array(sigma_H)
+    n = len(mu)
+    if not 0 <= omega < 1:
+        raise ValueError(f"omega must be in [0, 1), got {omega}")
+    k_hedge, k_spec = omega / (1 - omega), gamma / (1 - omega)
+
+    def objective(x):
+        return 0.5 * x @ cov @ x + k_hedge * x @ sigma_H - k_spec * x @ mu
+
+    def gradient(x):
+        return cov @ x + k_hedge * sigma_H - k_spec * mu
+
+    c = constraints or {}
+    names = c.get("assets")
+    lower = np.full(n, 0.0 if c.get("long_only", False) else -np.inf)
+    upper = np.full(n, np.inf)
+    if names is not None:
+        for a, v in c.get("upper", {}).items():
+            upper[names.index(a)] = v
+        for a, v in c.get("lower", {}).items():
+            lower[names.index(a)] = v
+    linear = []
+    if c.get("max_total") is not None:
+        linear.append(LinearConstraint(np.ones(n), ub=c["max_total"]))
+    # Start from equal weights (never from the formula, so the test "solver = formula" is a real test)
+    start = np.clip(np.ones(n) / (2 * n) if x0 is None else _array(x0), np.maximum(lower, -1e6), np.minimum(upper, 1e6))
+    bounds = None if constraints is None else list(zip(np.where(np.isinf(lower), None, lower), np.where(np.isinf(upper), None, upper)))
+    if bounds is None and not linear:
+        # No constraint at all: scipy would silently switch to BFGS, which ignores "ftol" and stops
+        # too early (error ~6e-4). We call BFGS explicitly with a tight gradient tolerance instead.
+        res = minimize(objective, start, jac=gradient, method="BFGS", options={"gtol": 1e-12, "maxiter": 10_000})
+    else:
+        res = minimize(objective, start, jac=gradient, method="SLSQP", bounds=bounds, constraints=linear,
+                       options=PRECISE_OPTIONS if precise else LAB_OPTIONS)
+    return res.x
+
+
+# =============================================================================
+# 5. Mean-variance solver (lab LN1 code)
 # =============================================================================
 
 def QP(x, sigma, mu, gamma):
