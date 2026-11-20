@@ -13,6 +13,7 @@ python notebooks/test_career.py   # tests with known answers
 career excess return = beta_bond x (BOND_CHF - rf) + beta_sector x (BANKS_EU - rf) + noise
 H = present value of the remaining salary until retirement
 discount rate of H = rf_long_run + beta_bond x bond_premium + beta_sector x sector_premium
+beta_bond = (1 - wage_rate_link) x duration of the salary / duration of BOND_CHF
 ```
 
 - Salaries are paid at the end of each year until the retirement age and grow at `salary_growth`.
@@ -20,24 +21,36 @@ discount rate of H = rf_long_run + beta_bond x bond_premium + beta_sector x sect
 
 ## How beta_bond is chosen
 
-A salary stream is a series of future cash flows, so like a bond its value moves with interest rates by its duration.
+A salary stream is a series of future cash flows, so its value moves with interest rates
+by its duration. But a salary is **not a fixed nominal bond**: when rates rise because of
+inflation, wages tend to rise too, which partly cancels the effect. `wage_rate_link` (0 to 1)
+is the share of interest-rate moves that salaries follow:
 
 ```
-beta_bond = modified duration of the salary stream / duration of BOND_CHF (9)
+beta_bond = (1 - wage_rate_link) x modified duration of the salary stream / duration of BOND_CHF (9)
 ```
 
-The discount rate depends on beta_bond and the duration depends on the discount rate, so the two are solved together.
+The discount rate depends on beta_bond and the duration depends on the discount rate, so the
+two are solved together.
 
-The result is a beta_bond above 1 for a young client, falling to 0 at retirement:
+**Why wage_rate_link is needed.** With `wage_rate_link = 0` (salary = fixed nominal bond),
+every career looks like a long bond: the banker's hedgeable career risk is 8.3% a year, almost
+all from interest rates, and the **civil servant (8.6%) looks riskier than the banker**, which
+is backwards. The interest-rate part also drowns the sector hedge (bond hedge about 10 times the
+sector hedge). With the default `wage_rate_link = 0.5`, the order is right again and the bond and
+sector parts of the banker's career have about the same size. A test in
+`notebooks/test_career.py` checks that the civil servant stays less risky than the banker.
 
-| Age | beta_bond | Discount rate | Duration | H (CHF, salary 130k) |
+Result with the default (0.5), banker, salary CHF 130k:
+
+| Age | beta_bond | Discount rate | Duration | H (CHF) |
 |---|---|---|---|---|
-| 35 | 1.53 | 3.28% | 13.8 | 2.97 m |
-| 45 | 1.09 | 2.84% | 9.8 | 2.24 m |
-| 55 | 0.59 | 2.34% | 5.3 | 1.22 m |
+| 35 | 0.80 | 2.55% | 14.4 | 3.29 m |
+| 45 | 0.56 | 2.31% | 10.0 | 2.36 m |
+| 55 | 0.30 | 2.05% | 5.3 | 1.24 m |
 | 65 | 0 | | | 0 |
 
-Writing a number for `beta_bond` in params.yaml overrides the rule.
+Writing a number for `beta_bond` in params.yaml overrides the rule (it is still 0 after retirement).
 
 ## Functions
 
@@ -55,7 +68,8 @@ Writing a number for `beta_bond` in params.yaml overrides the rule.
 2. **beta_sector = 0.15 for the banker** (0.15 for tech, 0.10 for industry-related careers, 0.05 for the dentist, 0 for the civil servant): an assumption, not an estimate, kept small on purpose (proposal, section 4.2). A slider in the app, and the wrong-beta test shows what happens if it is wrong.
 3. **Premia**: bond 1%, sector 5%; long-run CHF rate 1%; salary growth 1.5%.
 4. **Gross salary, not net.** Using net salary or only the part that is saved would lower H.
-5. On the data (2000–2026), the career of a 35-year-old has an excess-return volatility of about 8.3% per year. Most of it comes from the bond part (rates), a smaller part from banks.
+5. **wage_rate_link = 0.5**: halfway between "salary = fixed nominal bond" (0) and "no interest-rate risk" (1). A slider in the app.
+6. On the data (2000 to 2026), the banker's **hedgeable** career risk is about 5.2% per year: 4.3% from rates, 4.2% from banks (they partly offset, correlation about -0.25). The civil servant has 4.5%. The personal part of the career (promotion, job change) is not included because it cannot be hedged.
 
 ## Personas (any client, not only the banker)
 

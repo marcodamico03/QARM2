@@ -146,8 +146,12 @@ personas:
 #   career excess return = beta_bond x (BOND_CHF - rf) + beta_sector x (BANKS_EU - rf) + noise
 #   H = present value of the remaining salary until retirement
 career:
-  beta_bond: auto            # "auto" = duration rule: modified duration of the salary stream / duration of BOND_CHF.
-                             # A number here overrides the rule.
+  beta_bond: auto            # "auto" = duration rule: (1 - wage_rate_link) x modified duration of the salary
+                             # stream / duration of BOND_CHF. A number here overrides the rule.
+  wage_rate_link: 0.5        # share of interest-rate moves that salaries follow (0 to 1). When rates rise with
+                             # inflation, wages tend to rise too, so the salary is NOT a fixed nominal bond.
+                             # 0 = salary treated as a fixed nominal bond (civil servant looks riskier than the
+                             # banker, unrealistic); 1 = no interest-rate risk at all. Group choice, slider in the app.
   beta_sector: 0.15          # how much the career moves with the sector. Conservative on purpose:
                              # overestimating it is costly, underestimating it is not (proposal, section 4.2)
   bond_duration: 9.0         # modified duration of the bond index R_B (BOND_CHF = 7-15y CHF government bonds)
