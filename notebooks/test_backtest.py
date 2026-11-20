@@ -298,6 +298,12 @@ def test_robustness_on_saved_data():
     assert counts[0] == 0 and counts[1] >= counts[2] >= counts[3] >= 1, counts      # none, 20%, 30%, 40%
     prior = B.prior_sensitivity(p, data)
     assert len(prior) == 2 and np.isfinite(prior.to_numpy(dtype=float)).all()
+    q = copy.deepcopy(p)
+    q["backtest"]["hedge_map_portfolios"], q["backtest"]["hedge_map_betas"] = [100_000, 3_000_000], [0.0, 0.60]
+    hm = B.hedge_map(q, data)
+    assert np.allclose(hm["return part (CHF/yr)"] + hm["risk part (CHF/yr)"], hm["hedge gain (CHF/yr)"])
+    # The hedge reduces risk more with a bigger portfolio and a stronger sector link
+    assert hm.loc[(3_000_000, 0.60), "risk part (CHF/yr)"] > hm.loc[(100_000, 0.60), "risk part (CHF/yr)"] > 0
     print(f"robustness OK (wrong beta R2 {curve.attrs['risk part: R2 of the straight line']:.4f}; "
           f"job losses at 20/30/40%: {counts[1:]})")
 

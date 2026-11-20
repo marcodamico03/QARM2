@@ -16,7 +16,8 @@ than one who followed a standard portfolio, and for which reason?
     readable     correlation with the sector part of the career, CHF result in the sector's worst
                  months, CHF result in the crises
     robustness   significance (Newey-West, block bootstrap), wrong-beta curve with the theory
-                 h(2 beta - h), job-loss thresholds 20-40%, prior (global vs Swiss)
+                 h(2 beta - h), job-loss thresholds 20-40%, prior (global vs Swiss),
+                 hedge map (portfolio size x beta_sector)
 
 Fair comparison. With its own wealth path, a strategy that became richer has a smaller
 career share later, a result of past luck rather than of the decision. So strategies are
@@ -557,6 +558,39 @@ def prior_sensitivity(params=None, data=None):
     return pd.DataFrame(rows).set_index("prior")
 
 
+def hedge_map(params=None, data=None):
+    """When does the hedge matter? (idea and design from Roberto's version.) The hedge (C) vs (D) for
+    other clients: starting portfolio x beta_sector (params backtest hedge_map_*); here the adviser
+    knows the true beta. For each: the fair gain (shares of (D)) split into return and risk parts,
+    the p-value, total-wealth volatility of (D) and (C), and how much less of the sector (C) holds."""
+    if params is None:
+        params = load_params()
+    bt = params["backtest"]
+    sector = params["data"]["career_sector_asset"]
+    rows = []
+    for portfolio in bt["hedge_map_portfolios"]:
+        for beta in bt["hedge_map_betas"]:
+            p = copy.deepcopy(params)
+            p["client"]["portfolio_chf"] = portfolio
+            p["career"]["beta_sector"] = beta
+            run = run_strategies(p, data, strategies=("D", "C"))
+            gains = gain_table(run, pairs=(("C", "D"),), reference="D")
+            res, path = run["results"], run["path"]
+            e_d = total_wealth_excess(res["D"], path, res["D"])
+            e_c = total_wealth_excess(res["C"], path, res["D"])
+            rows.append({"start portfolio (CHF)": portfolio, "beta_sector": beta,
+                         "portfolio / total wealth (average)": float((res["D"]["value_start"] / res["D"]["W"]).mean()),
+                         "hedge gain (CHF/yr)": gains.loc["(C) vs (D)", "CE gain (CHF/yr)"],
+                         "return part (CHF/yr)": gains.loc["(C) vs (D)", "return part (CHF/yr)"],
+                         "risk part (CHF/yr)": gains.loc["(C) vs (D)", "risk part (CHF/yr)"],
+                         "p-value": gains.loc["(C) vs (D)", "p-value"],
+                         "total wealth vol (D)": e_d.std() * np.sqrt(MONTHS),
+                         "total wealth vol (C)": e_c.std() * np.sqrt(MONTHS),
+                         "sector: (C) - (D), average": float((res["C"][f"w_{sector}"] - res["D"][f"w_{sector}"]).mean())
+                         if sector else 0.0})
+    return pd.DataFrame(rows).set_index(["start portfolio (CHF)", "beta_sector"])
+
+
 def personas_backtest(params=None, data=None):
     """The main backtest for every persona: fair gains (D) vs (A), (C) vs (A), (C) vs (D)."""
     if params is None:
@@ -625,6 +659,8 @@ def print_report(params=None):
     print(job_loss_table(params, data).T.to_string(float_format="{:,.2f}".format))
     print("\nPrior:")
     print(prior_sensitivity(params, data).T.to_string(float_format="{:,.3f}".format))
+    print("\nHedge map (starting portfolio x beta_sector):")
+    print(hedge_map(params, data).to_string(float_format="{:,.3f}".format))
     print("\nAll personas:")
     print(personas_backtest(params, data).to_string(float_format="{:,.2f}".format))
 

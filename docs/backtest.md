@@ -106,7 +106,15 @@ The global market portfolio is compared with a Swiss pension-fund portfolio (Pic
 - **Why.** The Swiss prior gives banks a positive weight, so (D) holds 7.8% banks on average and (C) still 4.1%. The return part depends on which assets boomed.
 - **The risk part stays positive.**
 
-### 4. Every persona
+### 4. Hedge map: when does the hedge matter? (from Roberto's version)
+
+Starting portfolio (CHF 100k to 3 m) × β_S (0.15, 0.30, 0.60). Here the adviser knows the true β.
+
+- **The risk part is positive in all 12 cases.** It grows with both the portfolio and β_S: from CHF 158 a year (100k, 0.15) to CHF 52,632 (3 m, 0.60).
+- **Total-wealth volatility falls in every case.** For example, from 12.6% to 10.6% for the largest client.
+- **The return part is often negative.** To hedge a strong bank link, (C) also cuts equities, which boomed from 2005 to 2026. So only 3 of the 12 totals are positive, and none is significant.
+
+### 5. Every persona
 
 | Persona | (D) vs (A) | (C) vs (A) | Hedge (C) vs (D) | Return part | Risk part |
 |---|---|---|---|---|---|
@@ -124,13 +132,13 @@ The global market portfolio is compared with a Swiss pension-fund portfolio (Pic
 ## The message for the presentation
 
 1. **The total-wealth view works, for every client.** It adds about CHF 9k to 19k a year of certainty equivalent, and it is significant.
-2. **The hedge does what it is built for, in every test.** Its risk part is positive for every persona, every job-loss threshold and both priors.
+2. **The hedge does what it is built for, in every test.** Its risk part is positive for every persona, every job-loss threshold, both priors and every client of the hedge map.
 3. **Its return part depends on history.** It costs money when the client's sector boomed (tech) and earns money when the sector crashed (banks).
 4. **At cautious betas the hedge is small, and long-only keeps it safe:** its break-even true β is about 0.01.
 
-## Compared with Roberto's version
+## Changes from Roberto's version
 
-Both versions were written independently and give the same headline: (C) vs (A) CHF 12,072 here vs 12,084 in his, (D) vs (A) 11,589 vs 11,599, (C) vs (D) 483 vs 455. Differences in this version:
+The headline is the same: (C) vs (A) CHF 12,072 here vs 12,084 in his, (D) vs (A) 11,589 vs 11,599, (C) vs (D) 483 vs 455. Kept from his version: the fair comparison with the same wealth shares, the risk/return split, the job-loss thresholds and the hedge map. Changes:
 
 1. **H between birthdays** is interpolated, so it does not jump once a year.
 2. **The pension accumulates month by month,** and it gets no credits during unemployment.

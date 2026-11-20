@@ -223,6 +223,8 @@ backtest:
   job_loss_thresholds: [0.20, 0.30, 0.40]   # the job is lost when the client's sector falls this much below its
                                             # peak (30% central value, proposal 4.2); none in the main backtest
   wrong_beta_multipliers: [0.0, 0.5, 1.0, 1.5, 2.0]   # true beta_sector = multiplier x assumed (proposal 4.2)
+  hedge_map_portfolios: [100000, 300000, 1000000, 3000000]   # hedge map (from Roberto's version): starting
+  hedge_map_betas: [0.15, 0.30, 0.60]                         # portfolio x beta_sector, both known to the adviser
   worst_months_share: 0.10   # "bad months" = the worst 10% months of the sector part of the career
   bootstrap_block: 12        # circular block bootstrap: blocks of 12 months (crises last several months)
   bootstrap_draws: 5000
