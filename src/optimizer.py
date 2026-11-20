@@ -532,8 +532,9 @@ def _without(constraints, group):
             c["lower"][employer] = c["lockup"]
         c["long_only"] = False
     elif group == "lockup":
+        # The client may now sell the deferred shares. The upper bound stays as it is: he can
+        # keep them even above the cap (the cap limits buying), so this is a true relaxation.
         c["lower"][employer] = 0.0 if c["long_only"] else -np.inf
-        c["upper"][employer] = c["caps"][employer]
         c["lockup"] = 0.0
     elif group == "caps":
         c["upper"] = np.full(n, np.inf)

@@ -411,6 +411,13 @@ def test_personas_on_saved_data():
     assert r["omega"] == 0
     assert np.allclose(r["weights"]["A"], r["weights"]["C"]) and np.allclose(r["weights"]["D"], r["weights"]["C"])
 
+    # Removing a constraint can only help, also when the employer stock is attractive and the
+    # lock-up is above the cap (a view makes UBS the best asset)
+    p = copy.deepcopy(params)
+    p["black_litterman"]["views"] = [{"assets": {"EMPLOYER": 1.0}, "q": 0.10, "sd": 0.02}]
+    r = O.analyze_client(p, excess)
+    assert (r["shadow_total"]["CHF per year"] >= -1e-6).all(), r["shadow_total"]
+
     # Negative CHF rates (2015-2021): the optimizer works on that period too
     r = O.analyze_client(params, excess.loc["2015-01-31":"2021-12-31"])
     assert np.isfinite(r["weights"].to_numpy()).all() and r["months"] == 84
