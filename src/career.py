@@ -44,10 +44,14 @@ TOLERANCE = 1e-12
 
 def params_for_persona(params, name):
     """Copy of params set up for one persona of params['personas'] (banker, dentist, ...):
-    age, salary, sector asset and beta_sector. Every function below then works unchanged."""
+    age, salary, sector asset, beta_sector, pension fund and deferred employer shares.
+    Every function below (and the optimizer) then works unchanged."""
     persona = params["personas"][name]
     p = copy.deepcopy(params)
-    p["client"].update({"persona": name, "age": persona["age"], "salary_chf": persona["salary_chf"]})
+    p["client"].update({"persona": name, "age": persona["age"], "salary_chf": persona["salary_chf"],
+                        "pillar2": persona.get("pillar2", True),
+                        "pension_chf": persona.get("pension_chf", "auto"),
+                        "deferred_shares_chf": persona.get("deferred_shares_chf", 0)})
     p["career"]["beta_sector"] = persona["beta_sector"] if persona["sector"] else 0.0
     p["data"]["career_sector_asset"] = persona["sector"]
     return p

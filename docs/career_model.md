@@ -61,4 +61,4 @@ Writing a number for `beta_bond` in params.yaml overrides the rule.
 
 `params.yaml`, section `personas`: banker, software engineer, dentist (self-employed), engineer in industry, shop owner (florist), construction worker, energy employee, civil servant. Each has an age, a salary, a sector (an asset of the universe or of the sector menu) and a beta_sector.
 
-`params_for_persona(params, "dentist")` returns params set up for that client, and every function works unchanged. `python -m src.career` prints H, betas and career volatility for all of them.
+`params_for_persona(params, "dentist")` returns params set up for that client (also the pension fund, `pillar2`, and the deferred employer shares, `deferred_shares_chf`), and every function works unchanged. `python -m src.career` prints H, betas and career volatility for all of them.
