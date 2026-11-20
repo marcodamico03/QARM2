@@ -215,5 +215,6 @@ black_litterman:
 
 backtest:
   window_months: 60
+  savings_rate: 0.10         # share of the gross salary added to the portfolio each month (assumption, slider)
   transaction_cost_bp: 10
   job_loss_threshold: 0.30   # tested from 0.20 to 0.40

@@ -121,6 +121,71 @@ def test_on_saved_data():
           f"equal weights: CHF {params['client']['portfolio_chf']:,.0f} -> CHF {r['value'].iloc[-1]:,.0f})")
 
 
+def career_data(params, months=36, bond=None, sector=None):
+    """Fake excess returns of the career assets. By default each month equals the EXPECTED
+    career return, so the career shocks are zero (a known answer)."""
+    import src.career as C
+    dates = pd.date_range("2005-01-31", periods=months, freq="ME")
+    c = params["career"]
+    data = pd.DataFrame({"BOND_CHF": c["bond_premium"] / 12, "BANKS_EU": c["sector_premium"] / 12}, index=dates)
+    if bond is not None:
+        data["BOND_CHF"] = bond
+    if sector is not None:
+        data["BANKS_EU"] = sector
+    return data
+
+
+def test_client_path():
+    import src.career as C
+    params = load_params()
+    age0, s0, g = params["client"]["age"], params["client"]["salary_chf"], params["career"]["salary_growth"]
+
+    # 1. Returns exactly as expected: no shock, so H is exactly the step 2 model value every month
+    path = B.client_path(params, career_data(params))
+    assert np.allclose(path["career_shock"], 0, atol=1e-15)
+    assert abs(path["H_start"].iloc[0] - C.human_capital(age0, s0, params)) < 1e-6
+    for k in (0, 12, 35):
+        age, salary = age0 + k / 12, s0 * (1 + g) ** (k / 12)
+        assert abs(path["age"].iloc[k] - age) < 1e-12 and abs(path["salary"].iloc[k] - salary) < 1e-6
+        assert abs(path["H_start"].iloc[k] - C.human_capital(age, salary, params)) < 1e-6
+    assert np.allclose(path["contribution"], params["backtest"]["savings_rate"] * path["salary"] / 12)
+
+    # 2. A bank crash (-30% in month 10) lowers the banker's H from then on, never before
+    crash = career_data(params)
+    crash.iloc[10, crash.columns.get_loc("BANKS_EU")] = -0.30
+    hit = B.client_path(params, crash)
+    assert np.allclose(hit["H_start"].iloc[:11], path["H_start"].iloc[:11])     # month 10 decided before the crash
+    assert (hit["H_start"].iloc[11:] < path["H_start"].iloc[11:]).all()
+    beta_sector = path["beta_sector"].iloc[10]
+    assert abs(hit["H_end"].iloc[10] / path["H_end"].iloc[10] - (1 - beta_sector * (0.30 + params["career"]["sector_premium"] / 12))) < 1e-12
+
+    # 3. A civil servant (no sector) does not feel the bank crash
+    q = C.params_for_persona(params, "civil_servant")
+    calm, crashed = B.client_path(q, career_data(q)), B.client_path(q, crash)
+    assert np.allclose(calm["H_start"], crashed["H_start"])
+
+    # 4. Retirement: from 65 on, no career, no savings
+    old = copy.deepcopy(params)
+    old["client"]["age"] = 64
+    late = B.client_path(old, career_data(old, months=24))
+    after = late["age"] >= 65
+    assert after.any() and (late.loc[after, "H_start"] == 0).all() and (late.loc[after, "contribution"] == 0).all()
+    print("client path OK (no shock = step 2 value; a bank crash hits the banker, not the civil servant)")
+
+
+def test_client_on_saved_data():
+    from src.data import load_returns, load_rf
+    params = load_params()
+    excess = load_returns().sub(load_rf(), axis=0)
+    start = excess.index[params["backtest"]["window_months"]]
+    path = B.client_path(params, excess, start)
+    assert path.index[0] == start and path["H_start"].notna().all() and (path["H_start"] > 0).all()
+    h = path["H_end"]
+    print(f"client on saved data OK (banker from {start:%Y-%m}: H CHF {path['H_start'].iloc[0]:,.0f}; "
+          f"Aug 2008 {h.loc['2008-08'].iloc[0]:,.0f} -> Feb 2009 {h.loc['2009-02'].iloc[0]:,.0f}; "
+          f"{path.index[-1]:%Y-%m} {h.iloc[-1]:,.0f} at age {path['age'].iloc[-1]:.1f})")
+
+
 if __name__ == "__main__":
     test_constant_weights()
     test_costs_and_turnover()
@@ -128,4 +193,6 @@ if __name__ == "__main__":
     test_no_look_ahead()
     test_errors()
     test_on_saved_data()
+    test_client_path()
+    test_client_on_saved_data()
     print("ALL TESTS PASSED")
