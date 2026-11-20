@@ -255,6 +255,42 @@ def test_strategies():
           f"valid weights every month; no look-ahead)")
 
 
+def test_metric_formulas():
+    # Certainty equivalent: known mean and variance
+    r = pd.Series([0.01, -0.01, 0.03, -0.03])                 # mean 0, variance 0.02 / 3 x ... computed below
+    gamma = 0.25
+    assert abs(B.certainty_equivalent_return(r, gamma) - (12 * r.mean() - 12 * r.var() / (2 * gamma))) < 1e-15
+    assert abs(B.certainty_equivalent_return(pd.Series([0.01] * 5), gamma) - 0.12) < 1e-12   # no risk: CE = mean
+    # Maximum drawdown: +10%, -50%, +20% -> peak 1.1, trough 0.55: -50%
+    assert abs(B.max_drawdown([0.10, -0.50, 0.20]) + 0.5) < 1e-12 and B.max_drawdown([0.01, 0.02]) == 0
+
+    # Total wealth: with no career and no pension it is the portfolio's excess return
+    dates = pd.date_range("2010-01-31", periods=3, freq="ME")
+    result = pd.DataFrame({"value": [101.0, 99.0, 102.0], "return": [0.01, -0.0198019801980198, 0.0303030303030303]}, index=dates)
+    rf = pd.Series(0.001, index=dates)
+    path = pd.DataFrame({"H_start": 0.0, "P": 0.0, "career_excess": 0.05}, index=dates)
+    assert np.allclose(B.total_wealth_excess(result, path, rf), result["return"] - rf)
+    # Half portfolio, half career: the average of the two excess returns
+    path["H_start"] = result["value"] / (1 + result["return"])
+    assert np.allclose(B.total_wealth_excess(result, path, rf), 0.5 * (result["return"] - rf) + 0.5 * 0.05)
+    print("metric formulas OK")
+
+
+def test_metrics_on_saved_data():
+    params = load_params()
+    results, path, gamma = B.run_strategies(params)
+    from src.data import load_rf
+    table = B.compute_metrics(results, path, load_rf(), gamma)
+    crises = B.crisis_table(results)
+    assert list(table.index) == ["A", "B", "C", "D"] and table["CE gain vs (A) (CHF per year)"]["A"] == 0
+    # The hedge does what it is built for: (C) moves less with the client's sector than (D)
+    assert table.loc["C", "correlation portfolio / sector part"] < table.loc["D", "correlation portfolio / sector part"]
+    # Every crisis has the four strategies, and W changes include the career
+    assert len(crises) == 4 * len(B.CRISES)
+    print("metrics on saved data OK")
+    return table, crises
+
+
 if __name__ == "__main__":
     test_constant_weights()
     test_costs_and_turnover()
@@ -265,4 +301,6 @@ if __name__ == "__main__":
     test_client_path()
     test_client_on_saved_data()
     test_strategies()
+    test_metric_formulas()
+    test_metrics_on_saved_data()
     print("ALL TESTS PASSED")

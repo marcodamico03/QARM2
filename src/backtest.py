@@ -4,7 +4,7 @@ Built step by step:
     4.1 Walk-forward engine (any strategy, no look-ahead, costs, savings)
     4.2 The client over time (age, salary, career value H, pension, savings)
     4.3 Strategies (A) standard, (B) 100 - age, (C) total wealth, (D) no hedge, run month by month
-    4.4 Metrics (certainty equivalent in CHF, correlation with the career, bad months)
+    4.4 Metrics (certainty equivalent in CHF, correlation with the career, bad months, crises)
     4.5 Robustness (wrong beta, job-loss threshold, sector-hedge fragility)
 
 Timing (no look-ahead): the weights for month t are decided with the data of the
@@ -130,9 +130,8 @@ def client_path(params, excess_returns, start=None):
         age, salary = state(k)
         working = age < retire
         beta_bond, beta_sector, _ = career_betas(age, params)
-        realised = beta_bond * data[bond].iloc[k]
-        if sector is not None:
-            realised += beta_sector * data[sector].iloc[k]
+        sector_part = beta_sector * data[sector].iloc[k] if sector is not None else 0.0
+        realised = beta_bond * data[bond].iloc[k] + sector_part
         expected = (beta_bond * career["bond_premium"] + beta_sector * career["sector_premium"]) / 12
         shock = realised - expected if working else 0.0
         H_start = human_capital(age, salary, params) * level
@@ -141,7 +140,8 @@ def client_path(params, excess_returns, start=None):
         H_end = human_capital(next_age, next_salary, params) * level
         P = pension_savings(age, salary, params) if has_pension else 0.0
         rows.append({"date": date, "age": age, "salary": salary, "beta_bond": beta_bond,
-                     "beta_sector": beta_sector, "career_excess": realised, "career_shock": shock,
+                     "beta_sector": beta_sector, "career_excess": realised, "career_sector_part": sector_part,
+                     "career_shock": shock,
                      "H_start": H_start, "H_end": H_end, "P": P,
                      "contribution": savings_rate * salary / 12 if working else 0.0})
     return pd.DataFrame(rows).set_index("date")
@@ -240,3 +240,86 @@ def run_strategies(params=None, returns=None, rf=None, strategies=("A", "B", "C"
         r["W"] = r["value"] + r["H"] + r["P"]
         results[name] = r
     return results, path, gamma
+
+
+# =============================================================================
+# 4.4 Metrics (proposal, section 4.1)
+# =============================================================================
+
+CRISES = {"2008 financial crisis": ("2008-08", "2009-02"), "2011 euro crisis": ("2011-06", "2011-09"),
+          "Jan 2015 CHF shock": ("2014-12", "2015-01"), "COVID 2020": ("2020-01", "2020-03"),
+          "2022 rates and inflation": ("2021-12", "2022-09"), "Credit Suisse 2023": ("2023-02", "2023-03")}
+
+
+def certainty_equivalent_return(monthly_excess, gamma):
+    """Annual certainty equivalent of a series of monthly excess returns (lab convention,
+    gamma = risk tolerance): CE = mean x 12 - variance x 12 / (2 gamma)."""
+    r = pd.Series(monthly_excess).dropna()
+    return 12 * r.mean() - 12 * r.var() / (2 * gamma)
+
+
+def max_drawdown(monthly_returns):
+    """Largest fall from a peak of the cumulated returns (a negative number, 0 if none)."""
+    index = (1 + pd.Series(monthly_returns).fillna(0)).cumprod()
+    return float((index / index.cummax() - 1).min())
+
+
+def total_wealth_excess(result, path, rf):
+    """Monthly excess return of total wealth, each part weighted by its share at the start of the
+    month: (F/W) x portfolio excess + (H/W) x career excess (its market part, as in the optimizer)
+    + (P/W) x 0 (the pension has no market risk)."""
+    F = result["value"] / (1 + result["return"])               # value after the contribution, before the month
+    H, P = path.loc[result.index, "H_start"], path.loc[result.index, "P"]
+    W = F + H + P
+    rf = rf.loc[result.index]
+    return F / W * (result["return"] - rf) + H / W * path.loc[result.index, "career_excess"]
+
+
+def compute_metrics(results, path, rf, gamma, bad_share=0.10):
+    """One row per strategy (proposal, section 4.1).
+    Headline: certainty equivalent of total wealth (annual, and CHF per year on the average W),
+    and its gain over (A). Readable: correlation of the portfolio with the SECTOR part of the
+    career, average CHF result of the portfolio in the worst `bad_share` months of that sector
+    part (the same months for every strategy). Secondary: volatility and maximum drawdown of the
+    portfolio and of total wealth, turnover, costs, tracking error against (A)."""
+    sector = path["career_sector_part"]
+    has_sector = sector.abs().sum() > 0
+    bad = sector.nsmallest(max(1, int(round(bad_share * len(sector))))).index if has_sector else []
+    rows = {}
+    for name, r in results.items():
+        F_start = r["value"] / (1 + r["return"])
+        excess_F = r["return"] - rf.loc[r.index]
+        excess_W = total_wealth_excess(r, path, rf)
+        ce = certainty_equivalent_return(excess_W, gamma)
+        W_avg = r["W"].mean()
+        rows[name] = {
+            "CE total wealth (annual)": ce, "CE (CHF per year)": ce * W_avg,
+            "correlation portfolio / sector part": excess_F.corr(sector.loc[r.index]) if has_sector else np.nan,
+            "avg CHF in the sector's worst months": float((F_start * r["return"]).loc[bad].mean()) if has_sector else np.nan,
+            "portfolio volatility": excess_F.std() * np.sqrt(12), "portfolio max drawdown": max_drawdown(r["return"]),
+            "total wealth volatility": excess_W.std() * np.sqrt(12),
+            "turnover per year": r["turnover"].mean() * 12, "costs (CHF)": r["cost"].sum(),
+            "final portfolio (CHF)": r["value"].iloc[-1], "average W (CHF)": W_avg}
+    table = pd.DataFrame(rows).T
+    if "A" in results:
+        table["CE gain vs (A) (CHF per year)"] = table["CE (CHF per year)"] - table.loc["A", "CE (CHF per year)"]
+        a = results["A"]["return"]
+        table["tracking error vs (A)"] = [(results[n]["return"] - a).std() * np.sqrt(12) for n in table.index]
+    return table
+
+
+def crisis_table(results, crises=CRISES):
+    """CHF change of the portfolio F and of total wealth W in each crisis, per strategy: from the
+    end of the month before the first crisis month to the end of the last one. Computed from the
+    backtest, never assumed (proposal, section 4.1)."""
+    rows = []
+    for crisis, (first, last) in crises.items():
+        for name, r in results.items():
+            before = r.index[r.index < pd.Timestamp(first)]
+            if len(before) == 0 or pd.Timestamp(last) > r.index[-1]:
+                continue
+            start, end = before[-1], r.loc[:last].index[-1]
+            rows.append({"crisis": crisis, "strategy": name,
+                         "portfolio change (CHF)": r.loc[end, "value"] - r.loc[start, "value"],
+                         "total wealth change (CHF)": r.loc[end, "W"] - r.loc[start, "W"]})
+    return pd.DataFrame(rows).set_index(["crisis", "strategy"])
