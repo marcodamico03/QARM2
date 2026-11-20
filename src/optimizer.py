@@ -5,7 +5,7 @@ Built step by step, reusing the professor's lab code and notation (contract, sec
     2. Covariance on our data: sample and Ledoit-Wolf (labs LN1, LN3)
     3. Neutral portfolio, Black-Litterman prior and gamma (a client with no career holds it)
     4. Total-wealth optimization with the career (proposal, section 3.2; contract 1.2)
-    5. Shadow prices and risk contributions (lab LN5)
+    5. Risk contributions (lab LN5) and the cost of each constraint (shadow prices)
 
 Notation (contract, section 1.2 and 1.3):
     gamma   risk TOLERANCE, as in the labs: QP(x) = 0.5 x' Sigma x - gamma x' mu
@@ -228,7 +228,68 @@ def optimal_portfolio(mu, cov, sigma_H, omega, gamma, constraints=None, x0=None,
 
 
 # =============================================================================
-# 5. Mean-variance solver (lab LN1 code)
+# 5. Risk contributions (lab LN5) and the cost of each constraint
+# =============================================================================
+
+def risk_contributions(x, cov):
+    """Absolute risk contributions (contract; lab LN5): RC_i = x_i (Sigma x)_i / sqrt(x' Sigma x).
+    They add up to the portfolio volatility. Divide by the volatility for relative contributions."""
+    x, cov = _array(x), _array(cov)
+    return x * (cov @ x) / np.sqrt(x @ cov @ x)
+
+
+def total_wealth_risk(x, cov, sigma_H, omega, var_H):
+    """Risk contributions of TOTAL wealth: one slice per asset plus one for the career.
+
+    R_W = (1 - omega) x'R + omega R_H. The extended vector of exposures is
+    y = [(1 - omega) x, omega] with covariance [[Sigma, sigma_H], [sigma_H', var_H]], and the
+    lab LN5 formula is applied to it. var_H = variance of the career (from its betas, plus the
+    personal part if it is known). Returns (contributions array, length n + 1, last = career;
+    total-wealth volatility). The contributions add up to the volatility."""
+    cov, sigma_H = _array(cov), _array(sigma_H)
+    n = len(cov)
+    big = np.zeros((n + 1, n + 1))
+    big[:n, :n], big[:n, n], big[n, :n], big[n, n] = cov, sigma_H, sigma_H, var_H
+    y = np.append((1 - omega) * _array(x), omega)
+    return risk_contributions(y, big), portfolio_volatility(y, big)
+
+
+def certainty_equivalent(x, mu, cov, sigma_H, omega, gamma):
+    """Certainty-equivalent excess return of total wealth (annual), up to the career terms that do
+    not depend on x (they cancel when two portfolios are compared):
+        CE = E[R_W] - Var(R_W) / (2 gamma)      (lab convention: gamma = risk tolerance)
+    with E[R_W] = (1-omega) x'mu and Var(R_W) = (1-omega)^2 x'Sigma x + 2 omega (1-omega) x'sigma_H."""
+    x, mu, cov, sigma_H = _array(x), _array(mu), _array(cov), _array(sigma_H)
+    mean = (1 - omega) * x @ mu
+    var = (1 - omega) ** 2 * x @ cov @ x + 2 * omega * (1 - omega) * x @ sigma_H
+    return mean - var / (2 * gamma)
+
+
+def constraint_costs(mu, cov, sigma_H, omega, gamma, constraints, total_wealth_chf=None):
+    """Cost of each constraint for this client (proposal 3.2, "shadow prices" in a form a client
+    understands): the problem is solved again WITHOUT that one constraint, and the cost is the gain
+    in certainty-equivalent return of total wealth (annual). 0 means the constraint does not bind.
+    Returns a DataFrame: constraint, cost (annual, share of total wealth), cost in CHF per year."""
+    import copy
+    base = optimal_portfolio(mu, cov, sigma_H, omega, gamma, constraints)
+    ce_base = certainty_equivalent(base, mu, cov, sigma_H, omega, gamma)
+    variants = {"no borrowing (max total)": dict(constraints, max_total=None),
+                "no short selling": dict(constraints, long_only=False)}
+    for asset in constraints.get("upper", {}):
+        c = copy.deepcopy(constraints)
+        del c["upper"][asset]
+        variants[f"cap on {asset}"] = c
+    rows = []
+    for name, c in variants.items():
+        x = optimal_portfolio(mu, cov, sigma_H, omega, gamma, c)
+        cost = max(certainty_equivalent(x, mu, cov, sigma_H, omega, gamma) - ce_base, 0.0)
+        rows.append({"constraint": name, "cost (annual)": cost,
+                     "cost (CHF per year)": None if total_wealth_chf is None else cost * total_wealth_chf})
+    return pd.DataFrame(rows).set_index("constraint")
+
+
+# =============================================================================
+# 6. Mean-variance solver (lab LN1 code)
 # =============================================================================
 
 def QP(x, sigma, mu, gamma):

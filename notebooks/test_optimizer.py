@@ -199,6 +199,60 @@ def test_total_wealth():
           f"{c[names.index('BANKS_EU')]:.0%} with hedge)")
 
 
+def test_risk_contributions():
+    # Lab LN5 data: equally weighted portfolio, expected volatility 0.19866743568083822
+    vol = np.array([0.3, 0.25, 0.2, 0.15])
+    correl = np.full((4, 4), 0.7) + 0.3 * np.eye(4)
+    cov = correl * np.outer(vol, vol)
+    x_ew = np.ones(4) / 4
+    rc = O.risk_contributions(x_ew, cov)
+    assert abs(O.portfolio_volatility(x_ew, cov) - 0.19866743568083822) < 1e-12    # lab: vol_ew
+    assert abs(rc.sum() - 0.19866743568083822) < 1e-12                              # Euler: they add up
+    assert (np.diff(rc) < 0).all()            # equal weights: the most volatile asset contributes most
+
+    # Total wealth: with no career (omega = 0) the career slice is 0 and the rest is the portfolio's
+    rcw, volw = O.total_wealth_risk(x_ew, cov, np.zeros(4), 0.0, 0.04)
+    assert abs(rcw[-1]) < 1e-15 and np.allclose(rcw[:-1], rc) and abs(volw - rc.sum()) < 1e-12
+    print("risk contributions OK (lab LN5 reproduced)")
+
+
+def test_constraint_costs():
+    import src.career as C
+    from src.config import load_params
+    from src.data import load_returns, load_rf
+    params = load_params()
+    excess = load_returns().sub(load_rf(), axis=0)
+    prior = O.market_prior(excess, params)
+    cov, pi, gamma = prior["cov"], prior["pi"], prior["gamma"]
+    names = list(cov.columns)
+    p = C.params_for_persona(params, "banker")
+    bb, bs, _ = C.career_betas(35, p)
+    sigma_h = C.career_covariance(cov, bb, bs, p)
+    H, F = C.human_capital(35, 130_000, p), 100_000
+    omega = O.omega_share(H, F)
+    cons = O.constraints_from_params(params, names)
+
+    # Removing a constraint can never make the client worse off, so every cost is >= 0
+    costs = O.constraint_costs(pi, cov, sigma_h, omega, gamma, cons, total_wealth_chf=H + F)
+    assert (costs["cost (annual)"] >= 0).all()
+    # A constraint that does not bind costs (almost) nothing: the banker holds no gold and no banks
+    assert costs.loc["cap on GOLD", "cost (annual)"] < 1e-7 and costs.loc["cap on BANKS_EU", "cost (annual)"] < 1e-7
+    # The young banker wants far more than his portfolio and wants to short his own career risk:
+    # both "no borrowing" and "no short selling" bind. (No short selling costs the most: allowed to
+    # short, he would sell CHF bonds and banks to hedge his career fully.)
+    assert costs.loc["no borrowing (max total)", "cost (annual)"] > 1e-4
+    assert costs.loc["no short selling", "cost (annual)"] > 1e-4
+
+    # Career risk: the banker's career is most of his wealth, so most of his risk
+    x = O.optimal_portfolio(pi, cov, sigma_h, omega, gamma, cons)
+    var_h = np.array([bb, bs]) @ cov.loc[["BOND_CHF", "BANKS_EU"], ["BOND_CHF", "BANKS_EU"]].to_numpy() @ np.array([bb, bs])
+    rc, vol = O.total_wealth_risk(x, cov, sigma_h, omega, var_h)
+    assert abs(rc.sum() - vol) < 1e-12 and rc[-1] / vol > 0.5
+    print(f"constraint costs OK (banker: no short selling costs CHF {costs.loc['no short selling', 'cost (CHF per year)']:,.0f} "
+          f"a year, no borrowing CHF {costs.loc['no borrowing (max total)', 'cost (CHF per year)']:,.0f}; "
+          f"career = {rc[-1] / vol:.0%} of total risk)")
+
+
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning)   # fsolve progress messages
@@ -208,4 +262,6 @@ if __name__ == "__main__":
     test_covariance()
     test_market_prior()
     test_total_wealth()
+    test_risk_contributions()
+    test_constraint_costs()
     print("ALL TESTS PASSED")
