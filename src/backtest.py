@@ -93,7 +93,7 @@ def run_backtest(returns, rf, strategy, params, initial_value=None, contribution
 # 4.2 The client over time
 # =============================================================================
 
-def client_path(params, excess_returns, start=None):
+def client_path(params, excess_returns, start=None, job_loss_threshold=None):
     """The client month by month during the backtest (proposal, section 4.1).
 
     excess_returns: monthly excess returns with the career's bond asset and sector asset
@@ -111,12 +111,26 @@ def client_path(params, excess_returns, start=None):
       for month t can use. H_end contains the shock of month t.
       P = legal BVG estimate at this age and salary (no market risk)
       contribution = savings_rate x salary / 12, until retirement
+
+    Job-loss variant (job_loss_threshold, e.g. 0.30; proposal 4.1): when the career's sector falls
+    more than the threshold below its previous peak (cumulated excess returns, all past data),
+    the client loses his salary for params backtest job_loss_months, starting the NEXT month: no
+    savings, and H falls at once by one year of salary (the income he will not earn). It is
+    triggered when the drawdown crosses the threshold, never while he is already unemployed.
     Returns a DataFrame by month."""
     from src.optimizer import pension_savings
     client, career = params["client"], params["career"]
     bond = params["data"]["career_bond_asset"]
     sector = params["data"]["career_sector_asset"]
     data = excess_returns if start is None else excess_returns.loc[start:]
+    if job_loss_threshold is not None and sector is not None:
+        index = (1 + excess_returns[sector]).cumprod()            # all past data: the peak may be older
+        drawdown = (index / index.cummax() - 1).loc[data.index]
+        previous = (index / index.cummax() - 1).shift(1).loc[data.index].fillna(0.0)
+    else:
+        drawdown = previous = None
+    unemployed_months = int(params["backtest"].get("job_loss_months", 12))
+    unemployed_left = 0
     retire = client["retirement_age"]
     has_pension = client.get("pillar2", True)
     savings_rate = params["backtest"].get("savings_rate", 0.0)
@@ -138,13 +152,26 @@ def client_path(params, excess_returns, start=None):
         H_start = human_capital(age, salary, params) * level
         level *= 1 + shock
         next_age, next_salary = state(k + 1)
-        H_end = human_capital(next_age, next_salary, params) * level
+        unemployed = unemployed_left > 0
+        unemployed_left = max(unemployed_left - 1, 0)
+        job_lost = bool(drawdown is not None and working and not unemployed
+                        and previous.iloc[k] > -job_loss_threshold >= drawdown.iloc[k])
+        model_next = human_capital(next_age, next_salary, params)
+        job_loss_return = 0.0
+        if job_lost and model_next > 0:                       # one year of salary is lost from H
+            new_level = max(level - salary / model_next, 0.0)
+            job_loss_return = new_level / level - 1 if level > 0 else 0.0
+            level = new_level
+            unemployed_left = unemployed_months
+        H_end = model_next * level
         P = pension_savings(age, salary, params) if has_pension else 0.0
         rows.append({"date": date, "age": age, "salary": salary, "beta_bond": beta_bond,
                      "beta_sector": beta_sector, "career_excess": realised, "career_sector_part": sector_part,
                      "career_shock": shock,
-                     "H_start": H_start, "H_end": H_end, "P": P,
-                     "contribution": savings_rate * salary / 12 if working else 0.0})
+                     "H_start": H_start, "H_end": H_end, "P": P, "job_lost": job_lost,
+                     "job_loss_return": job_loss_return,
+                     "unemployed": unemployed,
+                     "contribution": savings_rate * salary / 12 if working and not unemployed else 0.0})
     return pd.DataFrame(rows).set_index("date")
 
 
@@ -214,7 +241,7 @@ def make_strategies(params, excess_returns, path):
             "C": total_wealth("C"), "D": total_wealth("D")}, gamma
 
 
-def run_strategies(params=None, returns=None, rf=None, strategies=("A", "B", "C", "D")):
+def run_strategies(params=None, returns=None, rf=None, strategies=("A", "B", "C", "D"), job_loss_threshold=None):
     """Backtest of the strategies for the client in params, on the saved data by default.
 
     returns: monthly CHF returns with the client's assets (core + sector if needed); rf: CHF rate.
@@ -231,7 +258,7 @@ def run_strategies(params=None, returns=None, rf=None, strategies=("A", "B", "C"
     returns = returns[assets]
     excess = returns.sub(rf, axis=0)
     window = int(params["backtest"]["window_months"])
-    path = client_path(params, excess, returns.index[window])
+    path = client_path(params, excess, returns.index[window], job_loss_threshold)
     functions, gamma = make_strategies(params, excess, path)
     results = {}
     for name in strategies:
@@ -267,13 +294,17 @@ def max_drawdown(monthly_returns):
 
 def total_wealth_excess(result, path, rf):
     """Monthly excess return of total wealth, each part weighted by its share at the start of the
-    month: (F/W) x portfolio excess + (H/W) x career excess (its market part, as in the optimizer)
-    + (P/W) x 0 (the pension has no market risk)."""
+    month: (F/W) x portfolio excess + (H/W) x career return + (P/W) x 0 (the pension has no market
+    risk). The career return is its market part (as in the optimizer) plus, in the job-loss
+    variant, the drop of H when the job is lost (job_loss_return)."""
     F = result["value"] / (1 + result["return"])               # value after the contribution, before the month
     H, P = path.loc[result.index, "H_start"], path.loc[result.index, "P"]
     W = F + H + P
     rf = rf.loc[result.index]
-    return F / W * (result["return"] - rf) + H / W * path.loc[result.index, "career_excess"]
+    career = path.loc[result.index, "career_excess"]
+    if "job_loss_return" in path:
+        career = career + path.loc[result.index, "job_loss_return"]
+    return F / W * (result["return"] - rf) + H / W * career
 
 
 def same_wealth_excess(result_b, result_a, path, rf):
@@ -453,3 +484,37 @@ def wrong_beta_curve(params=None, multipliers=(0.0, 0.5, 1.0, 1.5, 2.0), returns
                      "95% interval low (CHF)": low * W, "95% interval high (CHF)": high * W,
                      "p-value (gain <= 0)": float((boot <= 0).mean())})
     return pd.DataFrame(rows).set_index("multiplier")
+
+
+# =============================================================================
+# 4.5 Robustness, part 3: the job-loss variant (proposal, sections 4.1 and 4.2)
+# =============================================================================
+
+def job_loss_table(params=None, thresholds=(None, 0.20, 0.30, 0.40), returns=None, rf=None, draws=2000, seed=0):
+    """The backtest with the job-loss variant at several thresholds (None = no job loss).
+    For each: the dates of the job losses, the fair certainty-equivalent gains (C) vs (D) and
+    (C) vs (A) in CHF per year with block-bootstrap p-values, and the change of total wealth W
+    in the 2008 crisis for (A), (D), (C)."""
+    from src.config import load_params
+    if params is None:
+        params = load_params()
+    if returns is None or rf is None:
+        from src.data import load_returns, load_rf, load_sector_returns
+        returns, rf = load_returns().join(load_sector_returns()), load_rf()
+    rows = []
+    for threshold in thresholds:
+        results, path, gamma = run_strategies(params, returns, rf, strategies=("A", "C", "D"),
+                                              job_loss_threshold=threshold)
+        row = {"threshold": "none" if threshold is None else f"{threshold:.0%}",
+               "job losses": ", ".join(f"{d:%Y-%m}" for d in path.index[path["job_lost"]]) or "-"}
+        for b, a in (("C", "D"), ("C", "A")):
+            ra, rb = results[a], results[b]
+            gain, boot = block_bootstrap_ce_gain(total_wealth_excess(ra, path, rf),
+                                                 same_wealth_excess(rb, ra, path, rf), gamma, draws=draws, seed=seed)
+            row[f"CE gain ({b}) vs ({a}) (CHF/yr)"] = gain * ra["W"].mean()
+            row[f"p-value ({b}) vs ({a})"] = float((boot <= 0).mean())
+        crisis = crisis_table(results, {"2008": CRISES["2008 financial crisis"]})
+        for name in ("A", "D", "C"):
+            row[f"2008 W change ({name}) (CHF)"] = crisis.loc[("2008", name), "total wealth change (CHF)"]
+        rows.append(row)
+    return pd.DataFrame(rows).set_index("threshold")

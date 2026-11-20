@@ -373,6 +373,47 @@ def test_wrong_beta_on_saved_data():
     return curve
 
 
+def test_job_loss():
+    import src.career as C
+    params = load_params()
+    # Fake career data: as expected (no shock) except a bank crash of -40% spread over months 10-11
+    data = career_data(params, months=40)
+    data.iloc[10, data.columns.get_loc("BANKS_EU")] = -0.25
+    data.iloc[11, data.columns.get_loc("BANKS_EU")] = -0.25          # cumulated: about -43%
+    base = B.client_path(params, data)
+    hit = B.client_path(params, data, job_loss_threshold=0.30)
+    k = int(np.flatnonzero(hit["job_lost"])[0])
+    assert hit["job_lost"].sum() == 1 and k == 11                      # crosses -30% in month 11
+    months = params["backtest"]["job_loss_months"]
+    # Nothing changes before the trigger; then 12 months unemployed, without savings
+    assert np.allclose(hit["H_start"].iloc[:k + 1], base["H_start"].iloc[:k + 1])
+    assert hit["unemployed"].iloc[k + 1:k + 1 + months].all() and not hit["unemployed"].iloc[k + 1 + months:].any()
+    assert (hit["contribution"].iloc[k + 1:k + 1 + months] == 0).all()
+    assert np.allclose(hit["contribution"].iloc[k + 1 + months:], base["contribution"].iloc[k + 1 + months:])
+    # H falls at once by one year of salary at the end of the trigger month, and that drop is part
+    # of the career's return that month (so the risk measures see it)
+    assert abs(base["H_end"].iloc[k] - hit["H_end"].iloc[k] - hit["salary"].iloc[k]) < 1e-6
+    assert abs((1 + hit["job_loss_return"].iloc[k]) * base["H_end"].iloc[k] - hit["H_end"].iloc[k]) < 1e-6
+    assert (hit["job_loss_return"].drop(hit.index[k]) == 0).all() and hit["job_loss_return"].iloc[k] < 0
+    # A threshold deeper than the crash: no job loss, identical path
+    calm = B.client_path(params, data, job_loss_threshold=0.50)
+    assert not calm["job_lost"].any() and np.allclose(calm["H_end"], base["H_end"])
+    # The civil servant has no sector: never loses his job this way
+    q = C.params_for_persona(params, "civil_servant")
+    assert not B.client_path(q, data, job_loss_threshold=0.20)["job_lost"].any()
+    print("job loss OK (trigger after the crash, 12 months without savings, H minus one year of salary)")
+
+
+def test_job_loss_on_saved_data():
+    table = B.job_loss_table(load_params(), draws=300)
+    assert table.loc["none", "job losses"] == "-"
+    n = {t: 0 if table.loc[t, "job losses"] == "-" else len(table.loc[t, "job losses"].split(", "))
+         for t in ("20%", "30%", "40%")}
+    assert n["20%"] >= n["30%"] >= n["40%"] >= 1                     # a lower threshold triggers at least as often
+    print(f"job loss on saved data OK (job losses: {n})")
+    return table
+
+
 if __name__ == "__main__":
     test_constant_weights()
     test_costs_and_turnover()
@@ -388,4 +429,6 @@ if __name__ == "__main__":
     test_significance_formulas()
     test_wrong_beta_theory()
     test_wrong_beta_on_saved_data()
+    test_job_loss()
+    test_job_loss_on_saved_data()
     print("ALL TESTS PASSED")

@@ -217,4 +217,6 @@ backtest:
   window_months: 60
   savings_rate: 0.10         # share of the gross salary added to the portfolio each month (assumption, slider)
   transaction_cost_bp: 10
-  job_loss_threshold: 0.30   # tested from 0.20 to 0.40
+  job_loss_threshold: 0.30   # job-loss variant: the client loses his salary when his sector falls this much below its
+                             # peak (tested from 0.20 to 0.40, proposal 4.2). null = no job loss (default backtest)
+  job_loss_months: 12        # months without salary (and without savings) after a job loss
