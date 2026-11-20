@@ -836,7 +836,10 @@ def personas_summary(params=None, excess_returns=None):
                      "own sector (D)": w.loc[sector, "D"] if sector else np.nan,
                      "own sector (C)": w.loc[sector, "C"] if sector else np.nan,
                      "(D) vs (A), CHF/yr": ce["D"] - ce["A"], "(C) vs (D), CHF/yr": ce["C"] - ce["D"]})
-    return pd.DataFrame(rows).set_index("persona")
+    table = _clean(pd.DataFrame(rows).set_index("persona"))
+    gains = ["(D) vs (A), CHF/yr", "(C) vs (D), CHF/yr"]
+    table[gains] = table[gains].round(2) + 0.0                       # to the cent, no "-0"
+    return table
 
 
 def print_report(result):
