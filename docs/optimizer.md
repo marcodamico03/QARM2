@@ -122,27 +122,27 @@ Banker, age 35:
 
 | Constraint | Marginal: 1 pp more room is worth | Total cost of the group |
 |---|---|---|
-| No leverage | CHF 42 per year | CHF 29,949 per year (without it: 16× the portfolio invested) |
-| Long-only (CHF bonds) | CHF 51 per year | CHF 52,193 per year (all long-only constraints) |
-| Lock-up (UBS ≥ 15%) | CHF 0.9 per year | CHF 6 per year |
+| No leverage | CHF 40 per year | CHF 34,659 per year (without it: 31× the portfolio invested) |
+| Long-only (CHF bonds) | CHF 42 per year | CHF 40,796 per year (all long-only constraints) |
+| Lock-up (UBS ≥ 15%) | CHF 6.8 per year | CHF 94 per year |
 
 **Read the marginal values first.**
 
-- The total costs are upper bounds from a model that would borrow 15 times the portfolio, or short CHF 4.5 m of bonds. That is the Merton logic for a young client, not a realistic advice.
-- The lock-up costs almost nothing for two reasons:
+- The total costs are upper bounds from a model that would borrow 30 times the portfolio, or short CHF 3.6 m of bonds. That is the Merton logic for a young client, not a realistic advice.
+- The lock-up costs little (about 0.1% of the portfolio a year) for two reasons:
   - UBS has a high implied return (it carries market risk, which the market pays for).
   - The portfolio is only 3% of the banker's wealth, so its concentration hardly moves the risk of total wealth.
 
 ## Risk sources on total wealth
 
-Total wealth is treated as a portfolio of the assets, with weights (1 − ω)x, the career (weight ω_H) and the pension (weight ω_P, no market risk). The LN5 formula is then applied to the whole balance sheet. For the banker in (C), the career carries **97.8%** of the risk of total wealth.
+Total wealth is treated as a portfolio of the assets, with weights (1 − ω)x, the career (weight ω_H) and the pension (weight ω_P, no market risk). The LN5 formula is then applied to the whole balance sheet. For the banker in (C), the career carries **94.7%** of the risk of total wealth.
 
 `career.idiosyncratic_vol` adds the personal career risk. It is 0 by default, as in the backtest, and it does not change the optimal portfolio.
 
 ## Results: the banker (age 35)
 
-- H = CHF 2.97 m, P = CHF 48k, F = CHF 100k, so ω = 96.8%.
-- The career already holds CHF 4.5 m of CHF bonds (1.53 × H) and CHF 0.45 m of European banks (0.15 × H).
+- H = CHF 3.29 m, P = CHF 48k, F = CHF 100k, so ω = 97.1% (career betas: bond 0.80 with `wage_rate_link` = 0.5, sector 0.15).
+- The career already holds CHF 2.6 m of CHF bonds (0.80 × H) and CHF 0.49 m of European banks (0.15 × H).
 
 | Share of F | (A) standard | (D) total wealth, no hedge | (C) total wealth |
 |---|---|---|---|
@@ -152,26 +152,26 @@ Total wealth is treated as a portfolio of the assets, with weights (1 − ω)x, 
 | REIT_CH | 2.2% | 0 | 0 |
 | GOLD | 5.1% | 0 | 0 |
 | EMPLOYER (lock-up) | 15.0% | 15.0% | 15.0% |
-| Certainty equivalent vs (A), CHF per year | 0 | +1,882 | +1,888 |
+| Certainty equivalent vs (A), CHF per year | 0 | +1,505 | +1,584 |
 
 - **(A) → (D).** "Your job is a bond, so you can take more risk": the bonds go and equities come in.
 - **(D) → (C).** "Avoid your own sector": the banks go.
-- **Total-wealth volatility** hardly moves (8.05% to 8.08%), because the career is most of the wealth (proposal, section 4.1).
+- **Total-wealth volatility** hardly moves (5.19% to 5.28%), because the career is most of the wealth (proposal, section 4.1).
 
 ## All personas
 
 | Persona | ω | Bonds (A) | Bonds (D) | Own sector (D) | Own sector (C) | (D) vs (A), CHF/yr | (C) vs (D), CHF/yr |
 |---|---|---|---|---|---|---|---|
-| Banker | 96.8% | 33.7% | 0 | 10.0% | 0 | 1,882 | 6 |
-| Software engineer | 97.1% | 34.2% | 0 | 10.0% | 0 | 2,067 | 36 |
-| Dentist | 97.5% | 34.2% | 0 | 0 | 0 | 2,553 | 0 |
-| Engineer in industry | 95.6% | 34.2% | 0 | 10.0% | 0.3% | 2,059 | 1 |
-| Shop owner | 94.3% | 34.2% | 0 | 10.0% | 0 | 2,161 | 59 |
-| Construction worker | 95.4% | 34.2% | 0 | 0 | 0 | 2,397 | 0 |
-| Energy employee | 96.2% | 34.3% | 0 | 0 | 0 | 2,054 | 0 |
-| Civil servant | 96.2% | 34.3% | 0 | – | – | 2,748 | 0 |
+| Banker | 97.1% | 33.7% | 0 | 10.0% | 0 | 1,505 | 79 |
+| Software engineer | 97.5% | 34.2% | 0 | 10.0% | 0 | 1,688 | 26 |
+| Dentist | 97.7% | 34.2% | 0 | 0 | 0 | 2,226 | 0 |
+| Engineer in industry | 95.8% | 34.2% | 0 | 10.0% | 0 | 1,804 | 7 |
+| Shop owner | 94.8% | 34.2% | 0 | 10.0% | 0 | 1,857 | 36 |
+| Construction worker | 96.0% | 34.2% | 0 | 0 | 0 | 2,005 | 0 |
+| Energy employee | 96.6% | 34.3% | 0 | 0 | 0 | 1,706 | 0 |
+| Civil servant | 96.6% | 34.3% | 0 | – | – | 2,386 | 0 |
 
-The hedge ((D) → (C)) matters only when (D) would hold the client's own sector. Its value is small with β_S = 0.15. For the banker it is even smaller because European banks are negatively correlated with CHF bonds (−0.25): holding banks also hedges the bond part of the career.
+The hedge ((D) → (C)) matters only when (D) would hold the client's own sector. Its value is small with β_S = 0.15. It is partly offset because European banks are negatively correlated with CHF bonds (−0.25): holding banks also hedges the bond part of the career. With `wage_rate_link` = 0 (pure duration rule) the bond part is twice as large and the banker's hedge was worth only CHF 6 a year; with 0.5 it is worth CHF 79.
 
 ## For the app and the backtest
 
