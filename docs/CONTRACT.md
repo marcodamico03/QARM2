@@ -43,7 +43,9 @@ x* = gamma / (1 - omega) * inv(Sigma) mu  -  omega / (1 - omega) * inv(Sigma) si
 
 This is the same economics as the concept note (where gamma meant risk aversion),
 only the symbol changes. Calibration: gamma is chosen so that a client with no
-career and no pension (omega = 0) holds a 60/40 portfolio, and the same gamma is
+career and no pension (omega = 0) holds the neutral portfolio (Pictet LPP-40, the standard
+Swiss pension benchmark, `params.yaml` section `optimization`), which gives gamma = 1 / phi,
+and the same gamma is
 used in every strategy.
 
 ### 1.3 Black-Litterman names (as in lab LN4)

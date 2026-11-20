@@ -3,7 +3,7 @@
 Built step by step, reusing the professor's lab code and notation (contract, section 1):
     1. Black-Litterman expected returns (lab LN4)
     2. Covariance on our data: sample and Ledoit-Wolf (labs LN1, LN3)
-    3. Calibration of gamma (a client with no career holds 60/40)
+    3. Neutral portfolio, Black-Litterman prior and gamma (a client with no career holds it)
     4. Total-wealth optimization with the career (proposal, section 3.2)
     5. Shadow prices and risk contributions (lab LN5)
 
@@ -108,7 +108,40 @@ def correlation_from_covariance(cov):
 
 
 # =============================================================================
-# 3. Mean-variance solver (lab LN1 code)
+# 3. Neutral portfolio, Black-Litterman prior and gamma
+# =============================================================================
+
+def neutral_weights(params, assets):
+    """Neutral portfolio (params: optimization -> neutral_portfolio) as weights summing to 1,
+    aligned with `assets`. Assets not listed (for example EMPLOYER or a sector) get 0."""
+    raw = pd.Series(params["optimization"]["neutral_portfolio"], dtype=float)
+    unknown = set(raw.index) - set(assets)
+    if unknown:
+        raise ValueError(f"Neutral portfolio assets not in the data: {sorted(unknown)}")
+    w = raw.reindex(assets).fillna(0.0)
+    return w / w.sum()
+
+
+def market_prior(excess_returns, params):
+    """Everything the optimizer starts from, computed on the data:
+        cov     annualised covariance (method from params)
+        w0      neutral portfolio (weights sum to 1)
+        phi     implied risk aversion = prior_sharpe / volatility of w0         (LN4, slide 6)
+        pi      implied excess returns = phi x Sigma x w0                       (LN4, slide 7)
+        gamma   risk tolerance: 1 / phi if params say "auto", so that a client with no career
+                and no pension holds exactly w0; otherwise the number in params.
+    Returned as a dictionary."""
+    opt = params["optimization"]
+    cov = estimate_covariance(excess_returns, opt.get("covariance_method", "ledoit_wolf"))
+    w0 = neutral_weights(params, list(cov.columns))
+    phi = implied_risk_aversion(cov, w0, opt["prior_sharpe"])
+    pi = pd.Series(implied_excess_returns(cov, w0, phi), index=cov.columns)
+    gamma = 1.0 / phi if opt.get("gamma", "auto") == "auto" else float(opt["gamma"])
+    return {"cov": cov, "w0": w0, "phi": phi, "pi": pi, "gamma": gamma}
+
+
+# =============================================================================
+# 4. Mean-variance solver (lab LN1 code)
 # =============================================================================
 
 def QP(x, sigma, mu, gamma):

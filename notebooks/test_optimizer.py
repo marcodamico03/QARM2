@@ -108,6 +108,42 @@ def test_covariance():
     print(f"covariance OK (Ledoit-Wolf shrinkage on our data: {O.shrinkage_intensity(excess):.3f})")
 
 
+def test_market_prior():
+    import copy
+    from src.config import load_params
+    from src.data import load_returns, load_rf
+    params = load_params()
+    excess = load_returns().sub(load_rf(), axis=0)
+    prior = O.market_prior(excess, params)
+    w0, cov, pi, gamma, phi = prior["w0"], prior["cov"], prior["pi"], prior["gamma"], prior["phi"]
+
+    # Neutral weights: sum to 1, in the data's asset order, 0 for assets not listed (EMPLOYER)
+    assert abs(w0.sum() - 1) < 1e-12 and list(w0.index) == list(excess.columns) and w0["EMPLOYER"] == 0
+    assert abs(w0["BOND_CHF"] - 30 / 90) < 1e-12 and w0["BANKS_EU"] > 0     # the hedge needs CHF bonds and banks
+    # phi = Sharpe / volatility, gamma = 1 / phi, and the neutral portfolio earns Sharpe x volatility
+    vol = O.portfolio_volatility(w0, cov)
+    assert abs(phi - params["optimization"]["prior_sharpe"] / vol) < 1e-12 and abs(gamma - 1 / phi) < 1e-12
+    assert abs(w0 @ pi - params["optimization"]["prior_sharpe"] * vol) < 1e-12
+
+    # Key property: a client with no career and no pension holds exactly the neutral portfolio.
+    # (a) closed form, no constraint: gamma x inv(Sigma) x pi = w0
+    assert np.allclose(gamma * np.linalg.solve(cov.to_numpy(), pi.to_numpy()), w0.to_numpy())
+    # (b) the lab solver, fully invested and long-only
+    x = O.mean_variance_weights(pi, cov, gamma)
+    assert np.allclose(x, w0.to_numpy(), atol=1e-5), x
+
+    # A number in params overrides gamma; an asset that is not in the data is refused
+    p = copy.deepcopy(params); p["optimization"]["gamma"] = 0.5
+    assert O.market_prior(excess, p)["gamma"] == 0.5
+    p = copy.deepcopy(params); p["optimization"]["neutral_portfolio"]["XYZ"] = 1.0
+    try:
+        O.market_prior(excess, p)
+        raise AssertionError("an unknown asset should be refused")
+    except ValueError:
+        pass
+    print(f"market prior OK (phi {phi:.2f}, gamma {gamma:.3f}, neutral client holds the neutral portfolio)")
+
+
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning)   # fsolve progress messages
@@ -115,4 +151,5 @@ if __name__ == "__main__":
     test_black_litterman()
     test_mean_variance()
     test_covariance()
+    test_market_prior()
     print("ALL TESTS PASSED")

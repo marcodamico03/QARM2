@@ -162,7 +162,27 @@ career:
   # discount rate of H = rf_long_run + beta_bond x bond_premium + beta_sector x sector_premium
 
 optimization:
-  gamma: null                # TODO: calibrate so a no-career client holds 60/40
+  gamma: auto                # "auto" = 1 / phi: a client with no career and no pension holds the neutral
+                             # portfolio below (lab convention: gamma = risk TOLERANCE). A number overrides it.
+  covariance_method: ledoit_wolf   # "sample" or "ledoit_wolf" (shrinks correlations only, keeps volatilities)
+  prior_sharpe: 0.408        # Sharpe ratio of the neutral portfolio used to compute phi (Black-Litterman prior).
+                             # Source: Doeswijk and Swinkels (2024), global market portfolio 1970-2022.
+
+  # Neutral portfolio = what a Swiss client with no career and no pension would hold, and the
+  # Black-Litterman prior (implied returns). Pictet LPP-40 (2015 family), the standard Swiss pension
+  # benchmark, mapped onto our assets: CHF bonds 30, hedged world government bonds 10 + euro corporate
+  # bonds 5 -> BOND_GLB_H 15, Swiss equities 15, global equities 20 + small caps 5 -> EQ_WORLD 22.5 and
+  # BANKS_EU 2.5 (banks are about 10% of global equities), Swiss real estate 5. Emerging-market bonds (5)
+  # and hedge funds (5) have no matching asset: removed, the rest rescaled to 100%. Gold is not in LPP-40.
+  # It must hold some CHF bonds and banks, otherwise the career hedge ("hold less of them") is invisible.
+  neutral_portfolio:
+    BOND_CHF: 30.0
+    BOND_GLB_H: 15.0
+    EQ_CH: 15.0
+    EQ_WORLD: 22.5
+    BANKS_EU: 2.5
+    REIT_CH: 5.0
+    GOLD: 0.0
   long_only: true
   max_leverage: 1.0
 
