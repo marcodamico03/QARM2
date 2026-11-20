@@ -3,7 +3,7 @@
 Built step by step:
     4.1 Walk-forward engine (any strategy, no look-ahead, costs, savings)
     4.2 The client over time (age, salary, career value H, pension, savings)
-    4.3 Strategies (A) standard, (B) 100 - age, (C) total wealth, (D) no hedge
+    4.3 Strategies (A) standard, (B) 100 - age, (C) total wealth, (D) no hedge, run month by month
     4.4 Metrics (certainty equivalent in CHF, correlation with the career, bad months)
     4.5 Robustness (wrong beta, job-loss threshold, sector-hedge fragility)
 
@@ -11,6 +11,8 @@ Timing (no look-ahead): the weights for month t are decided with the data of the
 `window_months` months BEFORE t only, then held during month t. Cash earns the CHF
 risk-free rate of the month (it can be negative). Everything is monthly.
 """
+import inspect
+
 import numpy as np
 import pandas as pd
 
@@ -22,8 +24,10 @@ def run_backtest(returns, rf, strategy, params, initial_value=None, contribution
 
     returns:   DataFrame of monthly asset returns in CHF (total, not excess), month-end dates
     rf:        Series of the monthly CHF risk-free rate, same dates
-    strategy:  function(window_excess, date) -> weights of the risky assets (same columns as
-               `returns`); the rest is cash. window_excess holds ONLY the months before `date`.
+    strategy:  function(window_excess, date) or function(window_excess, date, value) -> weights
+               of the risky assets (same columns as `returns`); the rest is cash. window_excess
+               holds ONLY the months before `date`; value = portfolio value in CHF before trading
+               (after the contribution), needed when the decision depends on the client's wealth.
     params:    uses params["backtest"]: window_months, transaction_cost_bp
     initial_value:  portfolio value in CHF at the start (default params client portfolio_chf)
     contributions:  CHF added at the start of each month (a number, a Series by date, or None)
@@ -49,6 +53,7 @@ def run_backtest(returns, rf, strategy, params, initial_value=None, contribution
     excess = returns.sub(rf, axis=0)
     holdings = np.zeros(len(assets))          # CHF in each risky asset
     cash = value
+    pass_value = len(inspect.signature(strategy).parameters) >= 3
     rows = []
     for t in range(window, len(returns)):
         date = returns.index[t]
@@ -61,7 +66,8 @@ def run_backtest(returns, rf, strategy, params, initial_value=None, contribution
         cash += added
         start_value = holdings.sum() + cash
 
-        weights = np.asarray(strategy(excess.iloc[t - window:t], date), dtype=float)
+        past = excess.iloc[t - window:t]
+        weights = np.asarray(strategy(past, date, start_value) if pass_value else strategy(past, date), dtype=float)
         if weights.shape != (len(assets),) or not np.isfinite(weights).all():
             raise ValueError(f"the strategy returned invalid weights on {date.date()}: {weights}")
 
@@ -139,3 +145,98 @@ def client_path(params, excess_returns, start=None):
                      "H_start": H_start, "H_end": H_end, "P": P,
                      "contribution": savings_rate * salary / 12 if working else 0.0})
     return pd.DataFrame(rows).set_index("date")
+
+
+# =============================================================================
+# 4.3 Strategies (A), (B), (C), (D), run month by month
+# =============================================================================
+
+STRATEGIES = {"A": "(A) standard: career ignored", "B": "(B) 100 - age rule",
+              "D": "(D) total wealth, no hedge", "C": "(C) total wealth"}
+
+
+def make_strategies(params, excess_returns, path):
+    """The four strategy functions for run_backtest (proposal, section 4.1).
+
+    excess_returns: monthly excess returns of the client's assets (src.optimizer.client_assets)
+    path:           client_path for the same months as the backtest (H_start, P, age, betas)
+    gamma is calibrated ONCE on the first window (the months before the backtest starts),
+    so no future data is used; every strategy shares it. Each month, (A), (C), (D) use the same
+    Ledoit-Wolf covariance and Black-Litterman returns of the past window and the same
+    constraints, lock-up included. Returns ({"A": f, "B": f, "C": f, "D": f}, gamma)."""
+    from src.career import career_covariance
+    from src.optimizer import (EMPLOYER, build_constraints, client_assets, estimate_covariance,
+                               expected_returns, risk_tolerance, solve_portfolio)
+    assets = client_assets(params)
+    window = int(params["backtest"]["window_months"])
+    gamma, _ = risk_tolerance(params, excess_returns.iloc[:window])
+    deferred = float(params["client"].get("deferred_shares_chf") or 0.0)
+    cache = {}
+
+    def market(window_excess, date):
+        if date not in cache:                                 # same inputs for (A), (C), (D)
+            cov, _ = estimate_covariance(window_excess[assets], params)
+            mu, _ = expected_returns(cov, params)
+            cache[date] = (cov, mu.to_numpy())
+        return cache[date]
+
+    def lockup_share(value):
+        return min(deferred / value, 1.0) if EMPLOYER in assets and value > 0 else 0.0
+
+    def total_wealth(kind):
+        def strategy(window_excess, date, value):
+            cov, mu = market(window_excess, date)
+            state = path.loc[date]
+            H, P = state["H_start"], state["P"]
+            W = H + P + value
+            omega, omega_H = (H + P) / W, H / W
+            sigma_H = np.zeros(len(assets))
+            if kind == "C" and omega > 0:
+                career = career_covariance(cov, state["beta_bond"], state["beta_sector"], params)
+                sigma_H = omega_H / omega * career
+            om = 0.0 if kind == "A" else omega
+            constraints = build_constraints(assets, params, lockup_share(value))
+            return solve_portfolio(mu, cov.to_numpy(), sigma_H, om, gamma, constraints)["x"]
+        return strategy
+
+    def hundred_minus_age(window_excess, date, value):
+        x = np.zeros(len(assets))
+        lock = lockup_share(value)
+        equity = min(max((100 - path.loc[date, "age"]) / 100, 0.0), 1.0)
+        x[assets.index("EQ_WORLD")] = equity * (1 - lock)
+        x[assets.index(params["data"]["career_bond_asset"])] = (1 - equity) * (1 - lock)
+        if lock > 0:
+            x[assets.index(EMPLOYER)] = lock
+        return x
+
+    return {"A": total_wealth("A"), "B": hundred_minus_age,
+            "C": total_wealth("C"), "D": total_wealth("D")}, gamma
+
+
+def run_strategies(params=None, returns=None, rf=None, strategies=("A", "B", "C", "D")):
+    """Backtest of the strategies for the client in params, on the saved data by default.
+
+    returns: monthly CHF returns with the client's assets (core + sector if needed); rf: CHF rate.
+    Returns ({name: DataFrame by month}, client path, gamma). Each DataFrame is the output of
+    run_backtest plus: age, H (career value, end of month), P (pension), W = portfolio + H + P."""
+    from src.config import load_params
+    from src.optimizer import client_assets
+    if params is None:
+        params = load_params()
+    if returns is None or rf is None:
+        from src.data import load_returns, load_rf, load_sector_returns
+        returns, rf = load_returns().join(load_sector_returns()), load_rf()
+    assets = client_assets(params)
+    returns = returns[assets]
+    excess = returns.sub(rf, axis=0)
+    window = int(params["backtest"]["window_months"])
+    path = client_path(params, excess, returns.index[window])
+    functions, gamma = make_strategies(params, excess, path)
+    results = {}
+    for name in strategies:
+        r = run_backtest(returns, rf, functions[name], params,
+                         initial_value=params["client"]["portfolio_chf"], contributions=path["contribution"])
+        r["age"], r["H"], r["P"] = path["age"], path["H_end"], path["P"]
+        r["W"] = r["value"] + r["H"] + r["P"]
+        results[name] = r
+    return results, path, gamma

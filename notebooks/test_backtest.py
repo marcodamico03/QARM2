@@ -186,6 +186,75 @@ def test_client_on_saved_data():
           f"{path.index[-1]:%Y-%m} {h.iloc[-1]:,.0f} at age {path['age'].iloc[-1]:.1f})")
 
 
+def short_sample(params, extra_months=18):
+    """Real data cut to the first window + a few months (fast tests)."""
+    from src.data import load_returns, load_rf, load_sector_returns
+    n = params["backtest"]["window_months"] + extra_months
+    returns = load_returns().join(load_sector_returns()).iloc[:n]
+    return returns, load_rf().iloc[:n]
+
+
+def test_strategies():
+    import src.career as C
+    import src.optimizer as O
+    params = load_params()
+    returns, rf = short_sample(params)
+    results, path, gamma = B.run_strategies(params, returns, rf)
+    assets = O.client_assets(params)
+    weights = [f"w_{a}" for a in assets]
+    window = params["backtest"]["window_months"]
+
+    # gamma comes from the first window only
+    g, _ = O.risk_tolerance(params, returns.sub(rf, axis=0)[assets].iloc[:window])
+    assert abs(gamma - g) < 1e-12
+
+    # First month: the client's omega is the step 2 / step 3 balance sheet
+    first = path.index[0]
+    F = params["client"]["portfolio_chf"] + path["contribution"].iloc[0]
+    H = C.human_capital(params["client"]["age"], params["client"]["salary_chf"], params)
+    assert abs(path.loc[first, "H_start"] - H) < 1e-6
+
+    # (C) in the first month = Marco's solver on the same inputs, done by hand
+    excess = returns.sub(rf, axis=0)[assets]
+    cov, _ = O.estimate_covariance(excess.iloc[:window], params)
+    mu = O.expected_returns(cov, params)[0].to_numpy()
+    P = path.loc[first, "P"]
+    W = H + P + F
+    sigma_H = H / (H + P) * C.career_covariance(cov, path.loc[first, "beta_bond"], path.loc[first, "beta_sector"], params)
+    cons = O.build_constraints(assets, params, params["client"]["deferred_shares_chf"] / F)
+    x = O.solve_portfolio(mu, cov.to_numpy(), sigma_H, (H + P) / W, gamma, cons)["x"]
+    assert np.allclose(results["C"].loc[first, weights].to_numpy(), x, atol=1e-10)
+
+    # (B): (100 - age)% world equities, the rest CHF bonds, after the lock-up
+    b = results["B"]
+    lock = params["client"]["deferred_shares_chf"] / F
+    assert abs(b.loc[first, "w_EQ_WORLD"] - 0.65 * (1 - lock)) < 1e-12
+    assert abs(b.loc[first, "w_BOND_CHF"] - 0.35 * (1 - lock)) < 1e-12 and abs(b.loc[first, "w_EMPLOYER"] - lock) < 1e-12
+
+    # Every month, every strategy: valid weights (long-only, no borrowing, caps, lock-up held)
+    caps = {a: c for a, c in params["optimization"]["position_caps"].items() if a in assets}
+    for name, r in results.items():
+        w = r[weights]
+        assert (w.to_numpy() > -1e-9).all() and (w.sum(axis=1) < 1 + 1e-9).all(), name
+        assert (r["w_EMPLOYER"] >= params["client"]["deferred_shares_chf"] / (r["value"] + 1e9) - 1e-9).all()
+        for a, c in caps.items():
+            if a != "EMPLOYER":
+                assert (w[f"w_{a}"] <= c + 1e-9).all(), (name, a)
+        assert np.allclose(r["W"], r["value"] + r["H"] + r["P"])
+
+    # The hedge never holds MORE of the career's sector than the same client without it
+    assert (results["C"]["w_BANKS_EU"] <= results["D"]["w_BANKS_EU"] + 1e-9).all()
+
+    # No look-ahead with the real strategies: rewriting month 70 on changes nothing before it
+    changed = returns.copy()
+    changed.iloc[70:] = changed.iloc[70:] * -2
+    other, _, _ = B.run_strategies(params, changed, rf, strategies=("C",))
+    cut = returns.index[70]
+    assert np.allclose(results["C"].loc[:cut, weights], other["C"].loc[:cut, weights])
+    print(f"strategies OK (gamma {gamma:.3f} from the first window; (C) month 1 = solver by hand; "
+          f"valid weights every month; no look-ahead)")
+
+
 if __name__ == "__main__":
     test_constant_weights()
     test_costs_and_turnover()
@@ -195,4 +264,5 @@ if __name__ == "__main__":
     test_on_saved_data()
     test_client_path()
     test_client_on_saved_data()
+    test_strategies()
     print("ALL TESTS PASSED")
