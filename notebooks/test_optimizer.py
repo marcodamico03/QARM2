@@ -79,10 +79,40 @@ def test_mean_variance():
     print("mean-variance OK (implied returns give back x0)")
 
 
+def test_covariance():
+    import pandas as pd
+    # Known answer on simulated data: "sample" equals pandas .cov() x 12
+    rng = np.random.default_rng(0)
+    names = ["A", "B", "C"]
+    data = pd.DataFrame(rng.normal(0, [0.04, 0.02, 0.06], size=(240, 3)), columns=names)
+    sample = O.estimate_covariance(data, "sample")
+    assert np.allclose(sample, data.cov() * 12) and list(sample.columns) == names
+    lw = O.estimate_covariance(data, "ledoit_wolf")
+    assert 0 <= O.shrinkage_intensity(data) <= 1
+    assert np.allclose(lw, lw.T) and (np.linalg.eigvalsh(lw) > 0).all()        # symmetric, positive definite
+    assert np.allclose(np.diag(O.correlation_from_covariance(lw)), 1)
+    assert np.allclose(np.diag(lw), np.diag(sample))                              # volatilities unchanged
+
+    # On our saved data: same assets and dates as the data layer, and shrinkage makes the
+    # matrix better conditioned (more stable to invert, which the optimizer does)
+    from src.data import load_returns, load_rf
+    excess = load_returns().sub(load_rf(), axis=0)
+    s, l = O.estimate_covariance(excess, "sample"), O.estimate_covariance(excess, "ledoit_wolf")
+    assert list(s.columns) == list(excess.columns)
+    assert np.linalg.cond(l) <= np.linalg.cond(s)
+    assert np.allclose(np.sqrt(np.diag(s)), excess.std() * np.sqrt(12))          # annualised volatilities
+    assert np.allclose(np.diag(l), np.diag(s))                                    # shrinkage keeps every volatility
+    off = ~np.eye(len(s), dtype=bool)
+    assert (np.abs(O.correlation_from_covariance(l).to_numpy()[off])
+            <= np.abs(O.correlation_from_covariance(s).to_numpy()[off]) + 1e-12).all()   # correlations pulled to 0
+    print(f"covariance OK (Ledoit-Wolf shrinkage on our data: {O.shrinkage_intensity(excess):.3f})")
+
+
 if __name__ == "__main__":
     import warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning)   # fsolve progress messages
     test_implied_returns()
     test_black_litterman()
     test_mean_variance()
+    test_covariance()
     print("ALL TESTS PASSED")

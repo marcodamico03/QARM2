@@ -1,8 +1,8 @@
 """Optimization engine (contract, section 3).
 
 Built step by step, reusing the professor's lab code and notation (contract, section 1):
-    1. Black-Litterman expected returns (lab LN4)           <- this step
-    2. Covariance and the mean-variance solver (labs LN1, LN3)
+    1. Black-Litterman expected returns (lab LN4)
+    2. Covariance on our data: sample and Ledoit-Wolf (labs LN1, LN3)
     3. Calibration of gamma (a client with no career holds 60/40)
     4. Total-wealth optimization with the career (proposal, section 3.2)
     5. Shadow prices and risk contributions (lab LN5)
@@ -14,6 +14,7 @@ Notation (contract, section 1.2 and 1.3):
 Everything is in excess returns over the risk-free rate, unless stated otherwise.
 """
 import numpy as np
+import pandas as pd
 from scipy.optimize import LinearConstraint, fsolve, minimize
 
 
@@ -63,7 +64,51 @@ def tracking_error(x, x0, cov):
 
 
 # =============================================================================
-# 2. Mean-variance solver (lab LN1 code)
+# 2. Covariance of monthly excess returns (annualised: x 12, contract section 1.4)
+# =============================================================================
+
+def estimate_covariance(excess_returns, method="ledoit_wolf"):
+    """Annualised covariance matrix of monthly excess returns, as a DataFrame with the
+    asset names (contract section 1.5).
+
+    method="sample":       the plain estimate of the labs, excess_returns.cov() x 12.
+    method="ledoit_wolf":  Ledoit-Wolf shrinkage (Ledoit and Wolf, 2004) applied to the
+                           CORRELATIONS only: it is fitted on standardised returns, then scaled
+                           back with each asset's own volatility. Steadier weights (lecture notes
+                           3, stability) without changing any volatility. (Applied to raw returns,
+                           scikit-learn pulls every variance towards the average: CHF bond
+                           volatility would rise from 5.4% to 6.1%, which would distort the
+                           career hedge.)
+    Rows with a missing value are dropped first."""
+    data = excess_returns.dropna()
+    if method == "sample":
+        cov = data.cov().to_numpy() * 12
+    elif method == "ledoit_wolf":
+        from sklearn.covariance import LedoitWolf
+        vol = data.std().to_numpy()
+        correl = LedoitWolf().fit(((data - data.mean()) / vol).to_numpy()).covariance_
+        correl = correl / np.sqrt(np.outer(np.diag(correl), np.diag(correl)))   # exact 1 on the diagonal
+        cov = correl * np.outer(vol, vol) * 12
+    else:
+        raise ValueError(f"Unknown method {method}: use 'sample' or 'ledoit_wolf'")
+    return pd.DataFrame(cov, index=data.columns, columns=data.columns)
+
+
+def shrinkage_intensity(excess_returns):
+    """How much Ledoit-Wolf pulls the sample correlations towards the target (0 = none, 1 = all)."""
+    from sklearn.covariance import LedoitWolf
+    data = excess_returns.dropna()
+    return float(LedoitWolf().fit(((data - data.mean()) / data.std()).to_numpy()).shrinkage_)
+
+
+def correlation_from_covariance(cov):
+    """Correlation matrix from a covariance matrix (same labels)."""
+    vol = np.sqrt(np.diag(cov))
+    return pd.DataFrame(_array(cov) / np.outer(vol, vol), index=cov.index, columns=cov.columns)
+
+
+# =============================================================================
+# 3. Mean-variance solver (lab LN1 code)
 # =============================================================================
 
 def QP(x, sigma, mu, gamma):
