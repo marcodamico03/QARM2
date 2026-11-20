@@ -17,7 +17,7 @@ project stays coherent with the course.
 |---|---|
 | Mean-variance, constraints, risk-free asset as an extra asset | LN1 Markowitz |
 | Betas with OLS (`statsmodels`) | LN2 Beta |
-| Efficient frontier on real data, composition maps, stability | LN3 Stability |
+| Efficient frontier on real data, composition maps, stability, Ledoit-Wolf shrinkage | LN3 Stability |
 | Black-Litterman, tracking error, targeting with `fsolve` | LN4 Black-Litterman |
 | Risk contributions, ERC | LN5 Risk Budgeting |
 
@@ -33,8 +33,9 @@ We use the **lab convention**: gamma is **risk tolerance** (higher gamma = more 
 QP(x) = 0.5 * x' Sigma x - gamma * x' mu        (minimised, as in every lab)
 ```
 
-Total-wealth version, with omega = non-tradable share of total wealth and
-sigma_H = Cov(R, R_H):
+Total-wealth version, with omega = non-tradable share of total wealth, (H + P) / W,
+and sigma_H = Cov(R, R_NT), the covariance with the non-tradable wealth (career +
+pension). The pension has no market risk, so omega x sigma_H = omega_H x Cov(R, R_career):
 
 ```
 x* = gamma / (1 - omega) * inv(Sigma) mu  -  omega / (1 - omega) * inv(Sigma) sigma_H
@@ -43,10 +44,9 @@ x* = gamma / (1 - omega) * inv(Sigma) mu  -  omega / (1 - omega) * inv(Sigma) si
 
 This is the same economics as the concept note (where gamma meant risk aversion),
 only the symbol changes. Calibration: gamma is chosen so that a client with no
-career and no pension (omega = 0) holds the neutral portfolio (Pictet LPP-40, the standard
-Swiss pension benchmark, `params.yaml` section `optimization`), which gives gamma = 1 / phi,
-and the same gamma is
-used in every strategy.
+career and no pension (omega = 0) holds an optimal portfolio as volatile as a 60/40
+portfolio (`fsolve` on a target volatility, as in lab LN1), and the same gamma is
+used for every client and in every strategy.
 
 ### 1.3 Black-Litterman names (as in lab LN4)
 
@@ -101,7 +101,8 @@ universe is the table above plus the column of the client's sector.
 
 **Personas** (`params.yaml`, section `personas`): banker, tech engineer, dentist, engineer
 in industry, shop owner, construction worker, energy employee, civil servant. Each has an
-age, a salary, a sector and a beta_sector.
+age, a salary, a sector, a beta_sector, a pension fund or not (`pillar2`) and, for the banker,
+deferred employer shares (`deferred_shares_chf`).
 
 ---
 
@@ -124,7 +125,15 @@ is free. If you need a new input, propose it in a pull request first.
 | `src/optimizer.py` | `bl_expected_returns(cov, w_mkt, phi, P, Q, omega_views, tau)` | arrays | expected excess returns, `ndarray` (lab LN4 method) |
 | `src/optimizer.py` | `optimal_portfolio(mu, cov, sigma_H, omega, gamma, constraints)` | arrays and floats | weights of the risky assets, `ndarray` (the rest is cash) |
 | `src/optimizer.py` | `risk_contributions(x, cov)` | weights, covariance | `ndarray` of absolute risk contributions (lab LN5 formula) |
+| `src/optimizer.py` | `build_constraints(assets, params, lockup)` | asset names, params, lock-up share | `dict` of constraints (format below) |
+| `src/optimizer.py` | `strategy_portfolios(mu, cov, sigma_H, omega, gamma, constraints)` | as `optimal_portfolio` | `dict` with the solutions of (A), (D), (C) |
+| `src/optimizer.py` | `analyze_client(params, excess_returns)` | params, monthly excess returns | `dict` of tables for the app: weights, demands, shadow prices, risk sources |
 | `src/backtest.py` | `run_backtest(returns, rf, strategy, params)` | data and a strategy function | `DataFrame` by month: weights, portfolio value, total wealth |
+
+Constraints (`build_constraints`): a `dict` with `assets`, `lower` and `upper` (one
+bound per asset, `ndarray`, `-inf`/`inf` = no bound), `caps`, `budget` (1'x <= budget,
+`None` = no limit), `long_only`, `lockup` and `fully_invested` (1'x = budget, used only
+to reproduce the labs). `constraints=None` means no constraint at all.
 
 Until a module is ready, the others use a simple placeholder with the same name
 and output (for example `optimal_portfolio` returning equal weights).
@@ -163,7 +172,9 @@ Every function gets a small test with a known answer, in `notebooks/` or as a
 
 - **Lab expected outputs** are our reference values. Example from lab LN4:
   `vol_x0 = 0.15349267083479914`, `implied_phi = 1.6287422626782593`,
-  tracking error `0.013212510637878089`.
+  tracking error `0.013212510637878089`. That tracking error is what scipy returns
+  with its default tolerance (it stops after 4 iterations); the exact optimum gives
+  0.015323 (see `docs/optimizer.md`).
 - **Optimizer:** without constraints, `optimal_portfolio` must equal the formula
   in Section 1.2.
 - **Backtest:** the wrong-beta curve must match `h * (2 * beta - h)` in the
