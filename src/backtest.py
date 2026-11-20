@@ -5,7 +5,8 @@ Built step by step:
     4.2 The client over time (age, salary, career value H, pension, savings)
     4.3 Strategies (A) standard, (B) 100 - age, (C) total wealth, (D) no hedge, run month by month
     4.4 Metrics (certainty equivalent in CHF, correlation with the career, bad months, crises)
-    4.5 Robustness (wrong beta, job-loss threshold, sector-hedge fragility)
+    4.5 Robustness: statistical significance (Newey-West t-stats, block bootstrap), wrong beta,
+        job-loss threshold, sector-hedge fragility
 
 Timing (no look-ahead): the weights for month t are decided with the data of the
 `window_months` months BEFORE t only, then held during month t. Cash earns the CHF
@@ -275,13 +276,26 @@ def total_wealth_excess(result, path, rf):
     return F / W * (result["return"] - rf) + H / W * path.loc[result.index, "career_excess"]
 
 
+def same_wealth_excess(result_b, result_a, path, rf):
+    """Total-wealth excess return of strategy b measured with the wealth shares of strategy a:
+    the same client, with the same wealth, taking b's decision instead of a's this month.
+        = total_wealth_excess(a) + (F_a / W_a) x (return_b - return_a)
+    Comparing strategies with their OWN shares is biased: the strategy that became richer has a
+    smaller career share, which comes from past results, not from this month's decision (for the
+    banker it made the hedge (C) vs (D) look about four times larger and wrongly significant)."""
+    F = result_a["value"] / (1 + result_a["return"])
+    W = F + path.loc[result_a.index, "H_start"] + path.loc[result_a.index, "P"]
+    return total_wealth_excess(result_a, path, rf) + F / W * (result_b["return"] - result_a["return"])
+
+
 def compute_metrics(results, path, rf, gamma, bad_share=0.10):
     """One row per strategy (proposal, section 4.1).
     Headline: certainty equivalent of total wealth (annual, and CHF per year on the average W),
     and its gain over (A). Readable: correlation of the portfolio with the SECTOR part of the
     career, average CHF result of the portfolio in the worst `bad_share` months of that sector
     part (the same months for every strategy). Secondary: volatility and maximum drawdown of the
-    portfolio and of total wealth, turnover, costs, tracking error against (A)."""
+    portfolio and of total wealth, turnover, costs, tracking error against (A).
+    The gain over (A) uses the same wealth shares for both (same_wealth_excess): a fair comparison."""
     sector = path["career_sector_part"]
     has_sector = sector.abs().sum() > 0
     bad = sector.nsmallest(max(1, int(round(bad_share * len(sector))))).index if has_sector else []
@@ -302,7 +316,11 @@ def compute_metrics(results, path, rf, gamma, bad_share=0.10):
             "final portfolio (CHF)": r["value"].iloc[-1], "average W (CHF)": W_avg}
     table = pd.DataFrame(rows).T
     if "A" in results:
-        table["CE gain vs (A) (CHF per year)"] = table["CE (CHF per year)"] - table.loc["A", "CE (CHF per year)"]
+        a_excess = total_wealth_excess(results["A"], path, rf)
+        W_a = results["A"]["W"].mean()
+        table["CE gain vs (A) (CHF per year)"] = [
+            (certainty_equivalent_return(same_wealth_excess(results[n], results["A"], path, rf), gamma)
+             - certainty_equivalent_return(a_excess, gamma)) * W_a for n in table.index]
         a = results["A"]["return"]
         table["tracking error vs (A)"] = [(results[n]["return"] - a).std() * np.sqrt(12) for n in table.index]
     return table
@@ -323,3 +341,69 @@ def crisis_table(results, crises=CRISES):
                          "portfolio change (CHF)": r.loc[end, "value"] - r.loc[start, "value"],
                          "total wealth change (CHF)": r.loc[end, "W"] - r.loc[start, "W"]})
     return pd.DataFrame(rows).set_index(["crisis", "strategy"])
+
+
+# =============================================================================
+# 4.5 Robustness, part 1: is the gain more than luck?
+# =============================================================================
+
+def newey_west_tstat(series, lags=None):
+    """t-stat of the mean of a monthly series, with the Newey-West (1987) correction for
+    autocorrelation (crises last several months, so months are not independent).
+    lags: default floor(4 (T/100)^(2/9)), the usual rule. With lags = 0 it is the plain t-stat
+    (variance with ddof = 0). Returns (mean, Newey-West standard error of the mean, t-stat)."""
+    x = pd.Series(series).dropna().to_numpy()
+    T = len(x)
+    if lags is None:
+        lags = int(np.floor(4 * (T / 100) ** (2 / 9)))
+    d = x - x.mean()
+    long_run = d @ d / T
+    for lag in range(1, lags + 1):
+        long_run += 2 * (1 - lag / (lags + 1)) * (d[lag:] @ d[:-lag]) / T
+    se = np.sqrt(long_run / T)
+    return float(x.mean()), float(se), float(x.mean() / se)
+
+
+def block_bootstrap_ce_gain(excess_a, excess_b, gamma, block=12, draws=5000, seed=0):
+    """Distribution of the certainty-equivalent gain of b over a (annual), with a circular block
+    bootstrap: new histories are built from random blocks of `block` consecutive months, the SAME
+    months for a and b. Returns (gain on the real data, array of the bootstrapped gains)."""
+    a, b = pd.Series(excess_a).to_numpy(), pd.Series(excess_b).to_numpy()
+    if len(a) != len(b):
+        raise ValueError("the two series must cover the same months")
+    T = len(a)
+    rng = np.random.default_rng(seed)
+    n_blocks = int(np.ceil(T / block))
+    starts = rng.integers(0, T, size=(draws, n_blocks))
+    idx = ((starts[:, :, None] + np.arange(block)) % T).reshape(draws, -1)[:, :T]
+
+    def ce(sample):                                            # rows = histories
+        return 12 * sample.mean(axis=1) - 12 * sample.var(axis=1, ddof=1) / (2 * gamma)
+
+    real = certainty_equivalent_return(b, gamma) - certainty_equivalent_return(a, gamma)
+    return float(real), ce(b[idx]) - ce(a[idx])
+
+
+def significance_table(results, path, rf, gamma, pairs=(("C", "A"), ("D", "A"), ("C", "D")),
+                       block=12, draws=5000, seed=0):
+    """For each pair (b, a): Newey-West t-stats of the monthly excess-return difference b - a
+    (portfolio and total wealth), and the block-bootstrap 95% interval and p-value of the
+    certainty-equivalent gain of total wealth (annual and in CHF per year on a's average W).
+    Total wealth is compared with the SAME wealth shares (a's), see same_wealth_excess.
+    p-value = share of bootstrapped histories where the gain is <= 0."""
+    rows = []
+    for b, a in pairs:
+        ra, rb = results[a], results[b]
+        diff_F = rb["return"] - ra["return"]                    # rf cancels out
+        wa, wb = total_wealth_excess(ra, path, rf), same_wealth_excess(rb, ra, path, rf)
+        _, _, t_F = newey_west_tstat(diff_F)
+        _, _, t_W = newey_west_tstat(wb - wa)
+        gain, boot = block_bootstrap_ce_gain(wa, wb, gamma, block, draws, seed)
+        W_avg = ra["W"].mean()
+        low, high = np.percentile(boot, [2.5, 97.5])
+        rows.append({"comparison": f"({b}) vs ({a})", "t-stat portfolio (Newey-West)": t_F,
+                     "t-stat total wealth (Newey-West)": t_W,
+                     "CE gain (annual)": gain, "CE gain (CHF per year)": gain * W_avg,
+                     "95% interval low (CHF)": low * W_avg, "95% interval high (CHF)": high * W_avg,
+                     "p-value (gain <= 0)": float((boot <= 0).mean())})
+    return pd.DataFrame(rows).set_index("comparison")

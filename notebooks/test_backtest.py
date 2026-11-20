@@ -291,6 +291,44 @@ def test_metrics_on_saved_data():
     return table, crises
 
 
+def test_significance_formulas():
+    rng = np.random.default_rng(3)
+    x = pd.Series(rng.normal(0.002, 0.02, 240))
+    # lags = 0: the plain t-stat (variance with ddof = 0)
+    mean, se, t = B.newey_west_tstat(x, lags=0)
+    assert abs(se - x.std(ddof=0) / np.sqrt(len(x))) < 1e-15 and abs(t - mean / se) < 1e-12
+    # Positively autocorrelated months: Newey-West gives a LARGER standard error than the plain one
+    e = rng.normal(0, 0.02, 240)
+    ar = np.zeros(240)
+    for i in range(1, 240):
+        ar[i] = 0.6 * ar[i - 1] + e[i]
+    assert B.newey_west_tstat(ar)[1] > B.newey_west_tstat(ar, lags=0)[1]
+
+    # Bootstrap: b = a + 0.1% a month has the same variance, so EVERY history gains exactly 1.2% a year
+    a = pd.Series(rng.normal(0.003, 0.03, 120))
+    gain, boot = B.block_bootstrap_ce_gain(a, a + 0.001, gamma=0.25, draws=500)
+    assert abs(gain - 0.012) < 1e-12 and np.allclose(boot, 0.012) and (boot > 0).all()
+    # Same series: no gain in any history (p-value 1)
+    _, boot = B.block_bootstrap_ce_gain(a, a, gamma=0.25, draws=200)
+    assert np.allclose(boot, 0) and (boot <= 0).mean() == 1.0
+    # Same seed, same answer
+    assert np.array_equal(B.block_bootstrap_ce_gain(a, a * 1.1, 0.25, draws=100, seed=7)[1],
+                          B.block_bootstrap_ce_gain(a, a * 1.1, 0.25, draws=100, seed=7)[1])
+    # Same decisions, different wealth: the fair comparison gives exactly 0 gain. (With each
+    # strategy's own wealth shares it would not: that bias is what same_wealth_excess removes.)
+    dates = pd.date_range("2010-01-31", periods=60, freq="ME")
+    r = pd.Series(rng.normal(0.006, 0.04, 60), index=dates)
+    rich = pd.DataFrame({"value": 300.0, "return": r})          # same returns, three times the money
+    poor = pd.DataFrame({"value": 100.0, "return": r})
+    path = pd.DataFrame({"H_start": 1000.0, "P": 0.0, "career_excess": rng.normal(0.002, 0.01, 60)}, index=dates)
+    rf = pd.Series(0.0, index=dates)
+    fair = B.same_wealth_excess(rich, poor, path, rf)
+    assert np.allclose(fair, B.total_wealth_excess(poor, path, rf))
+    own = B.total_wealth_excess(rich, path, rf) - B.total_wealth_excess(poor, path, rf)
+    assert np.abs(own).max() > 1e-4                              # the biased version sees a difference
+    print("significance formulas OK (Newey-West, block bootstrap, fair same-wealth comparison)")
+
+
 if __name__ == "__main__":
     test_constant_weights()
     test_costs_and_turnover()
@@ -303,4 +341,5 @@ if __name__ == "__main__":
     test_strategies()
     test_metric_formulas()
     test_metrics_on_saved_data()
+    test_significance_formulas()
     print("ALL TESTS PASSED")
