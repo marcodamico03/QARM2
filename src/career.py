@@ -11,9 +11,12 @@ until retirement. The same betas give the discount rate of H, so one model gives
 both the VALUE and the RISK of the career.
 
 beta_bond follows from duration (params: beta_bond = "auto"): a salary stream is a
-series of future cash flows, so like a bond its value moves with interest rates by
-its duration. beta_bond = modified duration of the salary / duration of BOND_CHF.
-A young client has a long salary stream, so beta_bond is above 1; it falls with age.
+series of future cash flows, so its value moves with interest rates by its duration.
+But a salary is not a fixed nominal bond: when rates rise with inflation, wages tend to
+rise too. wage_rate_link (0 to 1) is the share of rate moves that salaries follow, so
+    beta_bond = (1 - wage_rate_link) x modified duration of the salary / duration of BOND_CHF.
+With wage_rate_link = 0 every career looks like a long nominal bond, and the safest careers
+(civil servant) look riskier than the banker. It falls with age and is 0 at retirement.
 
 Contract functions:
     career_return(bond_ret, sector_ret, beta_bond, beta_sector)  -> Series
@@ -109,8 +112,9 @@ def present_value_and_duration(times, flows, rate):
 def career_betas(age, params):
     """beta_bond, beta_sector and the discount rate of H for a client of this age.
 
-    If params['career']['beta_bond'] is a number, it is used as it is.
-    If it is "auto", beta_bond = modified duration of the salary stream / bond_duration.
+    If params['career']['beta_bond'] is a number, it is used as it is (0 once retired).
+    If it is "auto", beta_bond = (1 - wage_rate_link) x modified duration of the salary
+    stream / bond_duration.
     The discount rate depends on beta_bond and the duration depends on the discount
     rate, so the two are solved together (a few iterations, it converges quickly).
     The salary level does not matter: duration does not change if all cash flows double."""
@@ -118,17 +122,21 @@ def career_betas(age, params):
     beta_sector = c["beta_sector"]
     times, flows = salary_cash_flows(age, 1.0, params)
 
+    if len(flows) == 0:                                  # retired: no career left, no career risk
+        return 0.0, 0.0, discount_rate(0.0, 0.0, params)
+
     if c["beta_bond"] != "auto":
         beta_bond = float(c["beta_bond"])
         return beta_bond, beta_sector, discount_rate(beta_bond, beta_sector, params)
 
-    if len(flows) == 0:                                  # retired: no career left, no career risk
-        return 0.0, 0.0, discount_rate(0.0, 0.0, params)
+    link = c.get("wage_rate_link", 0.0)
+    if not 0.0 <= link <= 1.0:
+        raise ValueError(f"wage_rate_link must be between 0 and 1, got {link}")
     beta_bond = 1.0
     for _ in range(MAX_ITERATIONS):
         rate = discount_rate(beta_bond, beta_sector, params)
         _, duration = present_value_and_duration(times, flows, rate)
-        new_beta = duration / c["bond_duration"]
+        new_beta = (1.0 - link) * duration / c["bond_duration"]
         if abs(new_beta - beta_bond) < TOLERANCE:
             break
         beta_bond = new_beta
@@ -239,7 +247,8 @@ if __name__ == "__main__":
                                                        "beta_sector": "{:.2f}".format, "discount rate": "{:.2%}".format,
                                                        "H (CHF)": "{:,.0f}".format}))
 
-    print("\nCareer excess returns on the data, 2000 to today (betas of each persona):")
+    print("\nHedgeable career risk on the data, 2000 to today (betas of each persona;"
+          " the personal part, promotion or job change, is not included):")
     for name, persona in params["personas"].items():
         try:
             career = career_excess_returns(persona["age"], params_for_persona(params, name))

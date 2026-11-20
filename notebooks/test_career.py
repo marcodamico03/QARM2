@@ -60,16 +60,38 @@ def test_duration_and_betas():
     beta_bond, beta_sector, rate = C.career_betas(35, p)
     times, flows = C.salary_cash_flows(35, 1.0, p)
     _, duration = C.present_value_and_duration(times, flows, rate)
-    assert abs(beta_bond - duration / p["career"]["bond_duration"]) < 1e-9
+    link = p["career"]["wage_rate_link"]
+    assert abs(beta_bond - (1 - link) * duration / p["career"]["bond_duration"]) < 1e-9
     assert abs(rate - C.discount_rate(beta_bond, beta_sector, p)) < 1e-12
 
     # beta_bond falls with age (shorter salary stream) and is 0 at retirement
     betas = [C.career_betas(age, p)[0] for age in (35, 45, 55, 64, 65)]
     assert all(a > b for a, b in zip(betas, betas[1:])) and betas[-1] == 0.0
 
-    # a number in params overrides the rule
+    # a number in params overrides the rule, but never after retirement
     assert C.career_betas(35, base_params(beta_bond=2.5))[0] == 2.5
+    assert C.career_betas(65, base_params(beta_bond=2.5))[:2] == (0.0, 0.0)
     print("duration and betas OK")
+
+
+def test_wage_rate_link():
+    # link = 0: pure duration rule (salary = fixed nominal bond)
+    p0 = base_params(wage_rate_link=0.0)
+    b0, bs, rate0 = C.career_betas(35, p0)
+    times, flows = C.salary_cash_flows(35, 1.0, p0)
+    assert abs(b0 - C.present_value_and_duration(times, flows, rate0)[1] / p0["career"]["bond_duration"]) < 1e-9
+    # link = 1: salaries follow rates completely, no interest-rate risk
+    assert C.career_betas(35, base_params(wage_rate_link=1.0))[0] == 0.0
+    # beta_bond falls when the link rises
+    betas = [C.career_betas(35, base_params(wage_rate_link=k))[0] for k in (0.0, 0.25, 0.5, 0.75, 1.0)]
+    assert all(a > b for a, b in zip(betas, betas[1:]))
+    # values outside [0, 1] are refused
+    try:
+        C.career_betas(35, base_params(wage_rate_link=1.5))
+        raise AssertionError("wage_rate_link = 1.5 should be refused")
+    except ValueError:
+        pass
+    print("wage_rate_link OK")
 
 
 def test_career_covariance():
@@ -111,13 +133,21 @@ def test_on_saved_data():
         return
     career = C.career_excess_returns()
     assert career.index.equals(returns.index) and career.notna().all()
-    print("career on saved data OK")
+
+    # Sanity check: a civil servant (no sector risk) must have LESS hedgeable career risk
+    # than the banker. With wage_rate_link = 0 this fails, which is why the link exists.
+    p = load_params()
+    vol = {name: C.career_excess_returns(p["personas"][name]["age"], C.params_for_persona(p, name)).std()
+           for name in ("banker", "civil_servant")}
+    assert vol["civil_servant"] < vol["banker"], vol
+    print("career on saved data OK (civil servant less risky than banker)")
 
 
 if __name__ == "__main__":
     test_career_return()
     test_human_capital()
     test_duration_and_betas()
+    test_wage_rate_link()
     test_career_covariance()
     test_personas_and_no_sector()
     test_on_saved_data()
