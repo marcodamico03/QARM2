@@ -124,16 +124,21 @@ client:                      # default persona: the Zurich banker
   age: 35
   retirement_age: 65
   salary_chf: 130000         # gross annual salary, mid-career banker in Zurich (assumption, slider in the app)
-  portfolio_chf: 100000
-  pension_chf: null          # TODO (step 3, glide path)
+  portfolio_chf: 100000      # financial portfolio F (CHF), deferred shares included
+  pillar2: true              # false for the self-employed (no pension fund)
+  pension_chf: auto          # 2nd-pillar savings P (CHF). "auto" = estimated with the legal BVG rules (section
+                             # pension below); a number = the amount on the client's pension certificate
+  deferred_shares_chf: 15000 # employer shares (UBS) that cannot be sold yet: the lock-up. 0 = no employer stock.
+                             # Assumption: about 15% of the portfolio for a mid-career banker (slider in the app)
 
 # Presets for the app: change the client in seconds. sector = the asset R_S of the career
 # (BANKS_EU or a column of the sector menu; null = no sector exposure).
 # beta_sector is an assumption (wages have no market price, so it cannot be estimated from
 # the client's own data): small values on purpose, because overestimating it is costly
 # and underestimating it is not (proposal, section 4.2). pillar2 = false for self-employed.
+# deferred_shares_chf: employer shares under lock-up (only the banker: the employer stock is UBS).
 personas:
-  banker:           {label: "Banker, Zurich",          age: 35, salary_chf: 130000, sector: "BANKS_EU",   beta_sector: 0.15, pillar2: true}
+  banker:           {label: "Banker, Zurich",          age: 35, salary_chf: 130000, sector: "BANKS_EU",   beta_sector: 0.15, pillar2: true, deferred_shares_chf: 15000}
   tech_engineer:    {label: "Software engineer",       age: 32, salary_chf: 140000, sector: "SEC_TECH",   beta_sector: 0.15, pillar2: true}
   dentist:          {label: "Dentist, self-employed",  age: 40, salary_chf: 180000, sector: "SEC_HEALTH", beta_sector: 0.05, pillar2: false}
   factory_engineer: {label: "Engineer in industry",    age: 45, salary_chf: 115000, sector: "SEC_INDU",   beta_sector: 0.10, pillar2: true}
@@ -160,11 +165,53 @@ career:
   bond_premium: 0.01         # expected excess return of R_B (annual)
   sector_premium: 0.05       # expected excess return of R_S (annual)
   # discount rate of H = rf_long_run + beta_bond x bond_premium + beta_sector x sector_premium
+  idiosyncratic_vol: 0.0     # personal career risk (promotion, job change), annual volatility, uncorrelated with
+                             # markets. It does not change the optimal portfolio, only the split of total-wealth
+                             # risk. 0 = only the market part of the career, as in the backtest
 
+# 2nd pillar (BVG/LPP), used when client.pension_chf is "auto": savings built with the legal
+# minimum rules from start_age until today, with past salaries scaled back by salary_growth.
+# The account is credited at a guaranteed rate, so the pension has no market risk: it enlarges
+# omega, the non-tradable share of wealth, but adds no hedging demand (proposal, section 3.2).
+pension:
+  start_age: 25                       # age credits start at 25 (BVG, art. 16)
+  age_credits: {25: 0.07, 35: 0.10, 45: 0.15, 55: 0.18}   # % of the coordinated salary from each age on (BVG, art. 16)
+  coordination_deduction: 26460       # CHF, 2025-2026 (BSV key figures)
+  max_insured_salary: 90720           # CHF, upper limit of the mandatory salary, 2025-2026 (BSV key figures)
+  interest_rate: 0.0125               # BVG minimum interest rate 2024-2026 (BSV); raised to 2.0% from 2027
+
+# Optimizer (proposal, section 3.2). gamma = risk TOLERANCE, lab convention (contract, section 1.2):
+#   minimise 0.5 x Var(R_W) - gamma x E(R_W)   on total wealth W = H + P + F
 optimization:
-  gamma: null                # TODO: calibrate so a no-career client holds 60/40
-  long_only: true
-  max_leverage: 1.0
+  gamma: auto                # "auto" = calibrated once with fsolve (as in lab LN1): a client with no career and no
+                             # pension holds a portfolio as risky as calibration_portfolio. A number overrides it.
+  calibration_portfolio: {EQ_WORLD: 0.60, BOND_CHF: 0.40}   # the 60/40 benchmark
+  covariance: ledoit_wolf    # "ledoit_wolf" (shrinkage to constant correlation, LN3) or "sample"
+  long_only: true            # x >= 0
+  max_leverage: 1.0          # 1'x <= 1: no borrowing, the rest of the portfolio is cash. null = no limit
+  # Diversification caps (proposal 3.2, "sector caps"): at most 10% of the portfolio in one sector or one
+  # stock. Without them a young client, who is almost risk-neutral on a portfolio that is 3% of his wealth,
+  # puts everything in the single asset with the highest expected return (corner solution). The lock-up
+  # can be above the cap: the deferred shares are held, never bought.
+  position_caps: {BANKS_EU: 0.10, EMPLOYER: 0.10, SEC_FIN: 0.10, SEC_TECH: 0.10, SEC_HEALTH: 0.10,
+                  SEC_INDU: 0.10, SEC_CONS: 0.10, SEC_STAPLES: 0.10, SEC_ENERGY: 0.10, SEC_MATERIALS: 0.10}
+
+# Expected returns: Black-Litterman as in lab LN4 (contract, section 1.3)
+#   prior: pi = phi x Sigma x w_mkt, with phi = sharpe_ratio / volatility of w_mkt (the MARKET's risk aversion)
+#   views: P mu = Q + e, e ~ N(0, Omega), prior uncertainty Gamma = tau x Sigma
+black_litterman:
+  # Global market portfolio: Doeswijk and Swinkels (2024), "The Risk and Reward of Investing",
+  # Robeco working paper, Table 1: average weights 1970-2022, mapped to our universe.
+  market_weights:
+    EQ_WORLD: 0.497          # equities (the world index already holds Swiss equities and banks: no double counting)
+    BOND_GLB_H: 0.435        # government bonds 28.1% + non-government bonds 15.4%
+    REIT_CH: 0.044           # real estate
+    GOLD: 0.024              # commodities
+  sharpe_ratio: 0.408        # Sharpe ratio of the global market portfolio 1970-2022, annual (same paper, Table 2)
+  tau: 0.05                  # uncertainty of the prior (lab LN4 starting value)
+  views: []                  # optional client views, annual numbers, for example:
+                             #   - {assets: {EQ_CH: 1.0}, q: 0.05, sd: 0.10}                   Swiss equities earn 5% over cash
+                             #   - {assets: {EQ_CH: 1.0, EQ_WORLD: -1.0}, q: 0.01, sd: 0.05}   Swiss beat world equities by 1%
 
 backtest:
   window_months: 60
