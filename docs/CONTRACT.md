@@ -128,7 +128,8 @@ is free. If you need a new input, propose it in a pull request first.
 | `src/optimizer.py` | `build_constraints(assets, params, lockup)` | asset names, params, lock-up share | `dict` of constraints (format below) |
 | `src/optimizer.py` | `strategy_portfolios(mu, cov, sigma_H, omega, gamma, constraints)` | as `optimal_portfolio` | `dict` with the solutions of (A), (D), (C) |
 | `src/optimizer.py` | `analyze_client(params, excess_returns)` | params, monthly excess returns | `dict` of tables for the app: weights, demands, shadow prices, risk sources |
-| `src/backtest.py` | `run_backtest(returns, rf, strategy, params)` | data and a strategy function | `DataFrame` by month: weights, portfolio value, total wealth |
+| `src/backtest.py` | `run_backtest(returns, rf, strategy, params, path)` | data, a strategy function `f(window_excess, date, state)`, the client path | `DataFrame` by month: weights, portfolio value, total wealth |
+| `src/backtest.py` | `run_strategies(params, data)` | params, (returns, rf) | `dict`: results of (A), (B), (D), (C), client path, gamma |
 
 Constraints (`build_constraints`): a `dict` with `assets`, `lower` and `upper` (one
 bound per asset, `ndarray`, `-inf`/`inf` = no bound), `caps`, `budget` (1'x <= budget,

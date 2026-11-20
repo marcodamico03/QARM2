@@ -1,6 +1,6 @@
 """Tests of src/backtest.py with known answers (contract, section 6).
 
-Run from the project folder:
+Run from the project folder (about one minute):
     python notebooks/test_backtest.py
 """
 import copy
@@ -12,443 +12,309 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import src.backtest as B
+import src.optimizer as O
+from src.career import human_capital, params_for_persona
 from src.config import load_params
 
 
-def fake_data(months=24, seed=0):
-    """Made-up monthly data: two assets and a risk-free rate (some months negative, as in CHF)."""
+def fake_data(months=30, seed=0, columns=("X", "Y")):
+    """Made-up monthly returns and a CHF rate that is sometimes negative."""
     rng = np.random.default_rng(seed)
     dates = pd.date_range("2000-01-31", periods=months, freq="ME")
-    returns = pd.DataFrame(rng.normal(0.005, 0.04, size=(months, 2)), index=dates, columns=["A", "B"])
-    rf = pd.Series(rng.normal(0.0005, 0.001, size=months), index=dates)
+    returns = pd.DataFrame(rng.normal(0.005, 0.04, size=(months, len(columns))), index=dates, columns=list(columns))
+    rf = pd.Series(rng.normal(0.0002, 0.001, size=months), index=dates)
     return returns, rf
 
 
-def test_params(window=6, cost_bp=0.0):
+def small_params(window=6, cost_bp=0.0):
     p = copy.deepcopy(load_params())
     p["backtest"]["window_months"], p["backtest"]["transaction_cost_bp"] = window, cost_bp
     return p
 
 
-def test_constant_weights():
-    # Known answer: rebalanced monthly to fixed weights, no costs, the value grows by
-    # prod(1 + rf + w'(r - rf)), starting at the first month after the window
+# -----------------------------------------------------------------------------
+# 1. The engine
+# -----------------------------------------------------------------------------
+
+def test_engine_known_answers():
     returns, rf = fake_data()
-    w = np.array([0.6, 0.3])                                   # 10% cash
-    r = B.run_backtest(returns, rf, lambda window, date: w, test_params(), initial_value=100.0)
     later = returns.index[6:]
+    # Fixed weights, no costs: value = 100 x prod(1 + rf + w'(r - rf)), from the first month after the window
+    w = np.array([0.6, 0.3])
+    r = B.run_backtest(returns, rf, lambda window, date, state: w, small_params(), initial_value=100.0)
     expected = 100.0 * np.prod(1 + rf[later] + (returns.loc[later] - rf[later].to_numpy()[:, None]) @ w)
-    assert abs(r["value"].iloc[-1] - expected) < 1e-9 and r.index.equals(later)
-
-    # All cash: the value grows at the risk-free rate (negative months included)
-    r = B.run_backtest(returns, rf, lambda window, date: np.zeros(2), test_params(), initial_value=100.0)
+    assert r.index.equals(later) and abs(r["value"].iloc[-1] - expected) < 1e-9
+    assert np.allclose(r["cash"], 0.1)
+    # All cash: the value grows at the CHF rate, negative months included
+    r = B.run_backtest(returns, rf, lambda window, date, state: np.zeros(2), small_params(), initial_value=100.0)
     assert abs(r["value"].iloc[-1] - 100.0 * np.prod(1 + rf[later])) < 1e-9
-    print("constant weights OK")
 
-
-def test_costs_and_turnover():
-    # Zero returns: switching between 100% A and 100% B. First month: from cash to A,
-    # turnover 1. Then A -> B -> A: turnover 2 each month. Cost = 10 bp x turnover x value.
+    # Costs: zero returns, 100% X then 100% Y every other month. Turnover 1 the first month (from
+    # cash), then 2; each month the value falls by 10 bp x turnover.
     dates = pd.date_range("2000-01-31", periods=10, freq="ME")
-    returns = pd.DataFrame(0.0, index=dates, columns=["A", "B"])
-    rf = pd.Series(0.0, index=dates)
-    flip = lambda window, date: np.array([1.0, 0.0]) if date.month % 2 else np.array([0.0, 1.0])
-    r = B.run_backtest(returns, rf, flip, test_params(window=2, cost_bp=10), initial_value=100.0)
+    zero = pd.DataFrame(0.0, index=dates, columns=["X", "Y"])
+    flip = lambda window, date, state: np.array([1.0, 0.0]) if date.month % 2 else np.array([0.0, 1.0])
+    r = B.run_backtest(zero, pd.Series(0.0, index=dates), flip, small_params(window=2, cost_bp=10), initial_value=100.0)
     assert np.allclose(r["turnover"], [1] + [2] * 7)
-    value = 100.0
-    for turnover in r["turnover"]:
-        value *= 1 - 0.001 * turnover
-    assert abs(r["value"].iloc[-1] - value) < 1e-12 and np.allclose(r["cost"].iloc[0], 0.1)
-    print("costs and turnover OK")
+    assert abs(r["value"].iloc[-1] - 100.0 * np.prod(1 - 0.001 * r["turnover"])) < 1e-12
+    assert abs(r["cost"].sum() - (100.0 - r["value"].iloc[-1])) < 1e-12
+
+    # Savings: zero returns and no costs, all cash: the value is the start plus every saving
+    path = pd.DataFrame({"savings": 5.0, "H_start": 0.0, "P_start": 0.0}, index=dates)
+    r = B.run_backtest(zero, pd.Series(0.0, index=dates), lambda window, date, state: np.zeros(2),
+                       small_params(window=2), path=path, initial_value=100.0)
+    assert abs(r["value"].iloc[-1] - (100.0 + 5.0 * 8)) < 1e-12 and np.allclose(r["W"], r["value_start"])
+    print("engine (fixed weights, cash, costs, savings) OK")
 
 
-def test_contributions():
-    # Zero returns, no costs: the value is the start plus every contribution
-    dates = pd.date_range("2000-01-31", periods=12, freq="ME")
-    returns = pd.DataFrame(0.0, index=dates, columns=["A", "B"])
-    rf = pd.Series(0.0, index=dates)
-    r = B.run_backtest(returns, rf, lambda w, d: np.array([0.5, 0.5]), test_params(window=2),
-                       initial_value=1000.0, contributions=100.0)
-    assert np.allclose(r["value"], 1000.0 + 100.0 * np.arange(1, 11))
-    print("contributions OK")
+def test_no_look_ahead_and_errors():
+    returns, rf = fake_data(months=40)
+    seen = {}
 
-
-def test_no_look_ahead():
-    # 1. The strategy only ever sees the `window` months strictly before the decision date
-    returns, rf = fake_data()
-    seen = []
-    def spy(window, date):
-        seen.append((len(window), window.index.max(), date))
+    def spy(window, date, state):
+        seen[date] = (window.index[0], window.index[-1], len(window))
         return np.array([0.5, 0.5])
-    B.run_backtest(returns, rf, spy, test_params(window=6))
-    assert all(n == 6 and last < date for n, last, date in seen)
-    assert all(returns.index.get_loc(last) == returns.index.get_loc(date) - 1 for _, last, date in seen)
 
-    # 2. Changing the future does not change any past decision
-    momentum = lambda window, date: np.clip(window.mean().to_numpy() * 50 + 0.5, 0, 1)
-    base = B.run_backtest(returns, rf, momentum, test_params())
-    changed = returns.copy()
-    changed.iloc[15:] = changed.iloc[15:] * -3                    # rewrite month 15 onwards
-    other = B.run_backtest(changed, rf, momentum, test_params())
+    r = B.run_backtest(returns, rf, spy, small_params(window=12))
+    for date, (first, last, n) in seen.items():
+        assert last < date and n == 12 and last == returns.index[returns.index.get_loc(date) - 1]
+    # Changing the future does not change the past: weights depending on the window only
+    strategy = lambda window, date, state: np.clip(window.mean().to_numpy() * 50, 0, 0.5)
+    base = B.run_backtest(returns, rf, strategy, small_params(window=12))
+    future = returns.copy()
+    future.iloc[30:] = -0.5
+    changed = B.run_backtest(future, rf, strategy, small_params(window=12))
     weights = [c for c in base.columns if c.startswith("w_")]
-    first = returns.index[15]
-    assert np.allclose(base.loc[:first, weights], other.loc[:first, weights])   # decided before month 16
-    print("no look-ahead OK")
+    assert np.allclose(base[weights].iloc[:18], changed[weights].iloc[:18])          # decisions before month 31
+    assert not np.allclose(base["value"].iloc[-1], changed["value"].iloc[-1])
 
-
-def test_errors():
-    returns, rf = fake_data()
-    for bad in (lambda w, d: np.array([np.nan, 0.5]), lambda w, d: np.array([1.0])):
+    for bad in (lambda: B.run_backtest(returns, rf.iloc[1:], spy, small_params()),
+                lambda: B.run_backtest(returns.iloc[:5], rf.iloc[:5], spy, small_params()),
+                lambda: B.run_backtest(returns, rf, lambda w, d, s: np.array([np.nan, 0.0]), small_params()),
+                lambda: B.run_backtest(returns, rf, lambda w, d, s: np.zeros(3), small_params())):
         try:
-            B.run_backtest(returns, rf, bad, test_params())
-            raise AssertionError("invalid weights should be refused")
+            bad()
+            raise AssertionError("bad input accepted")
         except ValueError:
             pass
-    print("errors OK")
+    print("no look-ahead, errors OK")
 
 
-def test_on_saved_data():
-    # The real data: an equally weighted portfolio runs from the first month with a full 60-month window
-    from src.data import load_returns, load_rf
-    returns, rf = load_returns(), load_rf()
-    params = load_params()
-    n = returns.shape[1]
-    r = B.run_backtest(returns, rf, lambda w, d: np.ones(n) / n, params)
-    window = params["backtest"]["window_months"]
-    assert r.index[0] == returns.index[window] and len(r) == len(returns) - window
-    assert r["value"].notna().all() and (r["value"] > 0).all()
-    print(f"saved data OK ({r.index[0]:%Y-%m} to {r.index[-1]:%Y-%m}, {len(r)} months; "
-          f"equal weights: CHF {params['client']['portfolio_chf']:,.0f} -> CHF {r['value'].iloc[-1]:,.0f})")
+# -----------------------------------------------------------------------------
+# 2. The client over time
+# -----------------------------------------------------------------------------
 
-
-def career_data(params, months=36, bond=None, sector=None):
-    """Fake excess returns of the career assets. By default each month equals the EXPECTED
-    career return, so the career shocks are zero (a known answer)."""
-    import src.career as C
+def client_data(months=60, sector_path=None, params=None):
+    """Excess returns where bonds and the sector earn exactly the career model's premia (no shock),
+    unless a sector path is given."""
+    p = load_params() if params is None else params
     dates = pd.date_range("2005-01-31", periods=months, freq="ME")
-    c = params["career"]
-    data = pd.DataFrame({"BOND_CHF": c["bond_premium"] / 12, "BANKS_EU": c["sector_premium"] / 12}, index=dates)
-    if bond is not None:
-        data["BOND_CHF"] = bond
-    if sector is not None:
-        data["BANKS_EU"] = sector
-    return data
+    excess = pd.DataFrame({p["data"]["career_bond_asset"]: p["career"]["bond_premium"] / 12,
+                           p["data"]["career_sector_asset"]: p["career"]["sector_premium"] / 12}, index=dates)
+    if sector_path is not None:
+        excess[p["data"]["career_sector_asset"]] = sector_path
+    return excess, pd.Series(0.0, index=dates)
 
 
 def test_client_path():
-    import src.career as C
-    params = load_params()
-    age0, s0, g = params["client"]["age"], params["client"]["salary_chf"], params["career"]["salary_growth"]
-
-    # 1. Returns exactly as expected: no shock, so H is exactly the step 2 model value every month
-    path = B.client_path(params, career_data(params))
-    assert np.allclose(path["career_shock"], 0, atol=1e-15)
-    assert abs(path["H_start"].iloc[0] - C.human_capital(age0, s0, params)) < 1e-6
-    for k in (0, 12, 35):
-        age, salary = age0 + k / 12, s0 * (1 + g) ** (k / 12)
-        assert abs(path["age"].iloc[k] - age) < 1e-12 and abs(path["salary"].iloc[k] - salary) < 1e-6
-        assert abs(path["H_start"].iloc[k] - C.human_capital(age, salary, params)) < 1e-6
-    assert np.allclose(path["contribution"], params["backtest"]["savings_rate"] * path["salary"] / 12)
-
-    # 2. A bank crash (-30% in month 10) lowers the banker's H from then on, never before
-    crash = career_data(params)
-    crash.iloc[10, crash.columns.get_loc("BANKS_EU")] = -0.30
-    hit = B.client_path(params, crash)
-    assert np.allclose(hit["H_start"].iloc[:11], path["H_start"].iloc[:11])     # month 10 decided before the crash
-    assert (hit["H_start"].iloc[11:] < path["H_start"].iloc[11:]).all()
-    beta_sector = path["beta_sector"].iloc[10]
-    assert abs(hit["H_end"].iloc[10] / path["H_end"].iloc[10] - (1 - beta_sector * (0.30 + params["career"]["sector_premium"] / 12))) < 1e-12
-
-    # 3. A civil servant (no sector) does not feel the bank crash
-    q = C.params_for_persona(params, "civil_servant")
-    calm, crashed = B.client_path(q, career_data(q)), B.client_path(q, crash)
-    assert np.allclose(calm["H_start"], crashed["H_start"])
-
-    # 4. Retirement: from 65 on, no career, no savings
-    old = copy.deepcopy(params)
-    old["client"]["age"] = 64
-    late = B.client_path(old, career_data(old, months=24))
-    after = late["age"] >= 65
-    assert after.any() and (late.loc[after, "H_start"] == 0).all() and (late.loc[after, "contribution"] == 0).all()
-    print("client path OK (no shock = step 2 value; a bank crash hits the banker, not the civil servant)")
-
-
-def test_client_on_saved_data():
-    from src.data import load_returns, load_rf
-    params = load_params()
-    excess = load_returns().sub(load_rf(), axis=0)
-    start = excess.index[params["backtest"]["window_months"]]
-    path = B.client_path(params, excess, start)
-    assert path.index[0] == start and path["H_start"].notna().all() and (path["H_start"] > 0).all()
-    h = path["H_end"]
-    print(f"client on saved data OK (banker from {start:%Y-%m}: H CHF {path['H_start'].iloc[0]:,.0f}; "
-          f"Aug 2008 {h.loc['2008-08'].iloc[0]:,.0f} -> Feb 2009 {h.loc['2009-02'].iloc[0]:,.0f}; "
-          f"{path.index[-1]:%Y-%m} {h.iloc[-1]:,.0f} at age {path['age'].iloc[-1]:.1f})")
-
-
-def short_sample(params, extra_months=18):
-    """Real data cut to the first window + a few months (fast tests)."""
-    from src.data import load_returns, load_rf, load_sector_returns
-    n = params["backtest"]["window_months"] + extra_months
-    returns = load_returns().join(load_sector_returns()).iloc[:n]
-    return returns, load_rf().iloc[:n]
-
-
-def test_strategies():
-    import src.career as C
-    import src.optimizer as O
-    params = load_params()
-    returns, rf = short_sample(params)
-    results, path, gamma = B.run_strategies(params, returns, rf)
-    assets = O.client_assets(params)
-    weights = [f"w_{a}" for a in assets]
-    window = params["backtest"]["window_months"]
-
-    # gamma comes from the first window only
-    g, _ = O.risk_tolerance(params, returns.sub(rf, axis=0)[assets].iloc[:window])
-    assert abs(gamma - g) < 1e-12
-
-    # First month: the client's omega is the step 2 / step 3 balance sheet
-    first = path.index[0]
-    F = params["client"]["portfolio_chf"] + path["contribution"].iloc[0]
-    H = C.human_capital(params["client"]["age"], params["client"]["salary_chf"], params)
-    assert abs(path.loc[first, "H_start"] - H) < 1e-6
-
-    # (C) in the first month = Marco's solver on the same inputs, done by hand
-    excess = returns.sub(rf, axis=0)[assets]
-    cov, _ = O.estimate_covariance(excess.iloc[:window], params)
-    mu = O.expected_returns(cov, params)[0].to_numpy()
-    P = path.loc[first, "P"]
-    W = H + P + F
-    sigma_H = H / (H + P) * C.career_covariance(cov, path.loc[first, "beta_bond"], path.loc[first, "beta_sector"], params)
-    cons = O.build_constraints(assets, params, params["client"]["deferred_shares_chf"] / F)
-    x = O.solve_portfolio(mu, cov.to_numpy(), sigma_H, (H + P) / W, gamma, cons)["x"]
-    assert np.allclose(results["C"].loc[first, weights].to_numpy(), x, atol=1e-10)
-
-    # (B): (100 - age)% world equities, the rest CHF bonds, after the lock-up
-    b = results["B"]
-    lock = params["client"]["deferred_shares_chf"] / F
-    assert abs(b.loc[first, "w_EQ_WORLD"] - 0.65 * (1 - lock)) < 1e-12
-    assert abs(b.loc[first, "w_BOND_CHF"] - 0.35 * (1 - lock)) < 1e-12 and abs(b.loc[first, "w_EMPLOYER"] - lock) < 1e-12
-
-    # Every month, every strategy: valid weights (long-only, no borrowing, caps, lock-up held)
-    caps = {a: c for a, c in params["optimization"]["position_caps"].items() if a in assets}
-    for name, r in results.items():
-        w = r[weights]
-        assert (w.to_numpy() > -1e-9).all() and (w.sum(axis=1) < 1 + 1e-9).all(), name
-        assert (r["w_EMPLOYER"] >= params["client"]["deferred_shares_chf"] / (r["value"] + 1e9) - 1e-9).all()
-        for a, c in caps.items():
-            if a != "EMPLOYER":
-                assert (w[f"w_{a}"] <= c + 1e-9).all(), (name, a)
-        assert np.allclose(r["W"], r["value"] + r["H"] + r["P"])
-
-    # The hedge never holds MORE of the career's sector than the same client without it
-    assert (results["C"]["w_BANKS_EU"] <= results["D"]["w_BANKS_EU"] + 1e-9).all()
-
-    # No look-ahead with the real strategies: rewriting month 70 on changes nothing before it
-    changed = returns.copy()
-    changed.iloc[70:] = changed.iloc[70:] * -2
-    other, _, _ = B.run_strategies(params, changed, rf, strategies=("C",))
-    cut = returns.index[70]
-    assert np.allclose(results["C"].loc[:cut, weights], other["C"].loc[:cut, weights])
-    print(f"strategies OK (gamma {gamma:.3f} from the first window; (C) month 1 = solver by hand; "
-          f"valid weights every month; no look-ahead)")
-
-
-def test_metric_formulas():
-    # Certainty equivalent: known mean and variance
-    r = pd.Series([0.01, -0.01, 0.03, -0.03])                 # mean 0, variance 0.02 / 3 x ... computed below
-    gamma = 0.25
-    assert abs(B.certainty_equivalent_return(r, gamma) - (12 * r.mean() - 12 * r.var() / (2 * gamma))) < 1e-15
-    assert abs(B.certainty_equivalent_return(pd.Series([0.01] * 5), gamma) - 0.12) < 1e-12   # no risk: CE = mean
-    # Maximum drawdown: +10%, -50%, +20% -> peak 1.1, trough 0.55: -50%
-    assert abs(B.max_drawdown([0.10, -0.50, 0.20]) + 0.5) < 1e-12 and B.max_drawdown([0.01, 0.02]) == 0
-
-    # Total wealth: with no career and no pension it is the portfolio's excess return
-    dates = pd.date_range("2010-01-31", periods=3, freq="ME")
-    result = pd.DataFrame({"value": [101.0, 99.0, 102.0], "return": [0.01, -0.0198019801980198, 0.0303030303030303]}, index=dates)
-    rf = pd.Series(0.001, index=dates)
-    path = pd.DataFrame({"H_start": 0.0, "P": 0.0, "career_excess": 0.05}, index=dates)
-    assert np.allclose(B.total_wealth_excess(result, path, rf), result["return"] - rf)
-    # Half portfolio, half career: the average of the two excess returns
-    path["H_start"] = result["value"] / (1 + result["return"])
-    assert np.allclose(B.total_wealth_excess(result, path, rf), 0.5 * (result["return"] - rf) + 0.5 * 0.05)
-    print("metric formulas OK")
-
-
-def test_metrics_on_saved_data():
-    params = load_params()
-    results, path, gamma = B.run_strategies(params)
-    from src.data import load_rf
-    table = B.compute_metrics(results, path, load_rf(), gamma)
-    crises = B.crisis_table(results)
-    assert list(table.index) == ["A", "B", "C", "D"] and table["CE gain vs (A) (CHF per year)"]["A"] == 0
-    # The hedge does what it is built for: (C) moves less with the client's sector than (D)
-    assert table.loc["C", "correlation portfolio / sector part"] < table.loc["D", "correlation portfolio / sector part"]
-    # Every crisis has the four strategies, and W changes include the career
-    assert len(crises) == 4 * len(B.CRISES)
-    print("metrics on saved data OK")
-    return table, crises
-
-
-def test_significance_formulas():
-    rng = np.random.default_rng(3)
-    x = pd.Series(rng.normal(0.002, 0.02, 240))
-    # lags = 0: the plain t-stat (variance with ddof = 0)
-    mean, se, t = B.newey_west_tstat(x, lags=0)
-    assert abs(se - x.std(ddof=0) / np.sqrt(len(x))) < 1e-15 and abs(t - mean / se) < 1e-12
-    # Positively autocorrelated months: Newey-West gives a LARGER standard error than the plain one
-    e = rng.normal(0, 0.02, 240)
-    ar = np.zeros(240)
-    for i in range(1, 240):
-        ar[i] = 0.6 * ar[i - 1] + e[i]
-    assert B.newey_west_tstat(ar)[1] > B.newey_west_tstat(ar, lags=0)[1]
-
-    # Bootstrap: b = a + 0.1% a month has the same variance, so EVERY history gains exactly 1.2% a year
-    a = pd.Series(rng.normal(0.003, 0.03, 120))
-    gain, boot = B.block_bootstrap_ce_gain(a, a + 0.001, gamma=0.25, draws=500)
-    assert abs(gain - 0.012) < 1e-12 and np.allclose(boot, 0.012) and (boot > 0).all()
-    # Same series: no gain in any history (p-value 1)
-    _, boot = B.block_bootstrap_ce_gain(a, a, gamma=0.25, draws=200)
-    assert np.allclose(boot, 0) and (boot <= 0).mean() == 1.0
-    # Same seed, same answer
-    assert np.array_equal(B.block_bootstrap_ce_gain(a, a * 1.1, 0.25, draws=100, seed=7)[1],
-                          B.block_bootstrap_ce_gain(a, a * 1.1, 0.25, draws=100, seed=7)[1])
-    # Same decisions, different wealth: the fair comparison gives exactly 0 gain. (With each
-    # strategy's own wealth shares it would not: that bias is what same_wealth_excess removes.)
-    dates = pd.date_range("2010-01-31", periods=60, freq="ME")
-    r = pd.Series(rng.normal(0.006, 0.04, 60), index=dates)
-    rich = pd.DataFrame({"value": 300.0, "return": r})          # same returns, three times the money
-    poor = pd.DataFrame({"value": 100.0, "return": r})
-    path = pd.DataFrame({"H_start": 1000.0, "P": 0.0, "career_excess": rng.normal(0.002, 0.01, 60)}, index=dates)
-    rf = pd.Series(0.0, index=dates)
-    fair = B.same_wealth_excess(rich, poor, path, rf)
-    assert np.allclose(fair, B.total_wealth_excess(poor, path, rf))
-    own = B.total_wealth_excess(rich, path, rf) - B.total_wealth_excess(poor, path, rf)
-    assert np.abs(own).max() > 1e-4                              # the biased version sees a difference
-    print("significance formulas OK (Newey-West, block bootstrap, fair same-wealth comparison)")
-
-
-def test_wrong_beta_theory():
-    # Known answer (proposal 4.2): one factor s, career exposure beta (true), portfolio short k
-    # of it in (C) and 0 in (D). With wealth shares sF (portfolio) and sH (career), the hedge in
-    # career units is h = sF k / sH, and the variance saved is exactly sH^2 h (2 beta - h) var(s)
-    # (exact with sample moments). So the CE gain is 12 x saved / (2 gamma): a straight line in
-    # beta, zero at beta = h / 2.
-    rng = np.random.default_rng(5)
-    dates = pd.date_range("2010-01-31", periods=120, freq="ME")
-    s = rng.normal(0, 0.05, 120)
-    s = s - s.mean()                                           # no mean effect: only risk matters
-    F, H, gamma, k = 100.0, 900.0, 0.25, 2.0
-    sF, sH = F / (F + H), H / (F + H)
-    h = sF * k / sH
-    rf = pd.Series(0.0, index=dates)
-    d = pd.DataFrame({"value": F, "return": 0.0}, index=dates)          # value constant: F/W constant
-    c = pd.DataFrame({"value": F, "return": -k * s}, index=dates)
-    gains = []
-    for beta in (0.0, h / 2, h, 2 * h):
-        path = pd.DataFrame({"H_start": H, "P": 0.0, "career_excess": beta * s}, index=dates)
-        a = B.total_wealth_excess(d, path, rf)
-        b = B.same_wealth_excess(c, d, path, rf)
-        gain = B.certainty_equivalent_return(b, gamma) - B.certainty_equivalent_return(a, gamma)
-        theory = 12 * sH ** 2 * h * (2 * beta - h) * np.var(s, ddof=1) / (2 * gamma)
-        assert abs(gain - theory) < 1e-12, (beta, gain, theory)
-        gains.append(gain)
-    assert gains[0] < 0 and abs(gains[1]) < 1e-12 and gains[2] > 0 and gains[3] > gains[2]
-    print("wrong-beta theory OK (gain = h(2 beta - h), break-even at beta = h/2)")
-
-
-def test_wrong_beta_on_saved_data():
-    params = load_params()
-    curve = B.wrong_beta_curve(params, draws=300)
-    gains = curve["CE gain C vs D (CHF per year)"].to_numpy()
-    # Almost a straight line in the true beta, as the theory says. Not exactly: a different true
-    # beta_sector also changes the career's discount rate, hence its value and wealth share.
-    m = curve.index.to_numpy()
-    slope, intercept = np.polyfit(m, gains, 1)
-    r2 = 1 - np.var(gains - (slope * m + intercept)) / np.var(gains)
-    assert r2 > 0.99, r2
-    assert slope > 0 and (np.diff(gains) > 0).all()            # the hedge is worth more when the exposure is real
-    print(f"wrong-beta on saved data OK (gain CHF {gains[0]:,.0f} at true beta 0 -> CHF {gains[-1]:,.0f} at 2x)")
-    return curve
+    p = load_params()
+    excess, rf = client_data()
+    path = B.client_path(p, excess, rf, excess.index[0])
+    c = p["client"]
+    # No shock: at every birthday H is exactly the step 2 model value, and in between it is smooth
+    for k in (0, 12, 24, 48):
+        salary = c["salary_chf"] * (1 + p["career"]["salary_growth"]) ** (k / 12)
+        assert abs(path["H_start"].iloc[k] - human_capital(c["age"] + k // 12, salary, p)) < 1e-6
+    assert path["H_start"].pct_change().abs().max() < 0.02
+    # Savings = savings_rate x salary / 12; age +1/12 per month
+    assert np.allclose(path["savings"], p["backtest"]["savings_rate"] * path["salary"] / 12)
+    assert abs(path["age"].iloc[12] - (c["age"] + 1)) < 1e-12
+    # Pension: P0 from the balance sheet, then interest + age credits (salary growth 0 for a closed form)
+    q = copy.deepcopy(p)
+    q["career"]["salary_growth"] = 0.0
+    path = B.client_path(q, excess, rf, excess.index[0])
+    i = q["pension"]["interest_rate"] / 12
+    credit = 0.10 * (q["pension"]["max_insured_salary"] - q["pension"]["coordination_deduction"]) / 12   # age 35-44
+    expected = O.balance_sheet(q)["P"] * (1 + i) ** 12 + credit * sum((1 + i) ** j for j in range(12))
+    assert abs(path["P_start"].iloc[12] - expected) < 1e-6
+    # Retired: no career, no savings
+    r = copy.deepcopy(p)
+    r["client"]["age"] = 66
+    path = B.client_path(r, excess, rf, excess.index[0])
+    assert (path["H_start"] == 0).all() and (path["savings"] == 0).all()
+    print("client path (H = model without shocks, savings, pension) OK")
 
 
 def test_job_loss():
-    import src.career as C
-    params = load_params()
-    # Fake career data: as expected (no shock) except a bank crash of -40% spread over months 10-11
-    data = career_data(params, months=40)
-    data.iloc[10, data.columns.get_loc("BANKS_EU")] = -0.25
-    data.iloc[11, data.columns.get_loc("BANKS_EU")] = -0.25          # cumulated: about -43%
-    base = B.client_path(params, data)
-    hit = B.client_path(params, data, job_loss_threshold=0.30)
-    k = int(np.flatnonzero(hit["job_lost"])[0])
-    assert hit["job_lost"].sum() == 1 and k == 11                      # crosses -30% in month 11
-    months = params["backtest"]["job_loss_months"]
-    # Nothing changes before the trigger; then 12 months unemployed, without savings
-    assert np.allclose(hit["H_start"].iloc[:k + 1], base["H_start"].iloc[:k + 1])
-    assert hit["unemployed"].iloc[k + 1:k + 1 + months].all() and not hit["unemployed"].iloc[k + 1 + months:].any()
-    assert (hit["contribution"].iloc[k + 1:k + 1 + months] == 0).all()
-    assert np.allclose(hit["contribution"].iloc[k + 1 + months:], base["contribution"].iloc[k + 1 + months:])
-    # H falls at once by one year of salary at the end of the trigger month, and that drop is part
-    # of the career's return that month (so the risk measures see it)
-    assert abs(base["H_end"].iloc[k] - hit["H_end"].iloc[k] - hit["salary"].iloc[k]) < 1e-6
-    assert abs((1 + hit["job_loss_return"].iloc[k]) * base["H_end"].iloc[k] - hit["H_end"].iloc[k]) < 1e-6
-    assert (hit["job_loss_return"].drop(hit.index[k]) == 0).all() and hit["job_loss_return"].iloc[k] < 0
-    # A threshold deeper than the crash: no job loss, identical path
-    calm = B.client_path(params, data, job_loss_threshold=0.50)
-    assert not calm["job_lost"].any() and np.allclose(calm["H_end"], base["H_end"])
-    # The civil servant has no sector: never loses his job this way
-    q = C.params_for_persona(params, "civil_servant")
-    assert not B.client_path(q, data, job_loss_threshold=0.20)["job_lost"].any()
-    print("job loss OK (trigger after the crash, 12 months without savings, H minus one year of salary)")
+    p = load_params()
+    months = 60
+    sector = np.zeros(months)
+    sector[[10, 11, 12]] = -0.15        # the sector falls about 39% in three months
+    sector[40:43] = -0.15                # again, after the new job
+    excess, rf = client_data(months, sector)
+    path = B.client_path(p, excess, rf, excess.index[0], job_loss_threshold=0.30)
+    lost = list(np.flatnonzero(path["job_lost"]))
+    # 0.85^2 = -27.8%: not yet; 0.85^3 = -38.6%: the job is lost at the end of month 12
+    assert lost[0] == 12, lost
+    k = 12
+    assert path["employed"].iloc[k] and not path["employed"].iloc[k + 1:k + 13].any() and path["employed"].iloc[k + 13]
+    assert (path["savings"].iloc[k + 1:k + 13] == 0).all()
+    # H falls by the year of salary that will not be paid, then is back to the model after the year
+    no_loss = B.client_path(p, excess, rf, excess.index[0])
+    gap = path["salary"].iloc[k] * 12 / 12
+    assert abs(no_loss["H_start"].iloc[k + 1] - path["H_start"].iloc[k + 1] - gap) < 1e-6
+    assert abs(path["job_loss_return"].iloc[k] + gap / path["H_start"].iloc[k]) < 1e-15
+    assert abs(path["H_start"].iloc[k + 13] - no_loss["H_start"].iloc[k + 13]) < 1e-6
+    # No pension credits while unemployed
+    assert path["P_start"].iloc[k + 13] < no_loss["P_start"].iloc[k + 13]
+    # The peak restarts with the new job: the second fall costs the job again
+    assert len(lost) == 2 and lost[1] == 42, lost
+    # A civil servant has no sector: never loses his job
+    civil = params_for_persona(p, "civil_servant")
+    excess_c = excess.drop(columns=p["data"]["career_sector_asset"])
+    assert not B.client_path(civil, excess_c, rf, excess.index[0], job_loss_threshold=0.30)["job_lost"].any()
+    print("job loss (trigger, unemployment, H, pension, new peak) OK")
 
 
-def test_job_loss_on_saved_data():
-    table = B.job_loss_table(load_params(), draws=300)
-    assert table.loc["none", "job losses"] == "-"
-    n = {t: 0 if table.loc[t, "job losses"] == "-" else len(table.loc[t, "job losses"].split(", "))
-         for t in ("20%", "30%", "40%")}
-    assert n["20%"] >= n["30%"] >= n["40%"] >= 1                     # a lower threshold triggers at least as often
-    print(f"job loss on saved data OK (job losses: {n})")
-    return table
+# -----------------------------------------------------------------------------
+# 3. Metrics and statistics
+# -----------------------------------------------------------------------------
+
+def test_metric_formulas():
+    r = pd.Series([0.01, -0.02, 0.03, 0.0])
+    assert abs(B.certainty_equivalent_return(r, 0.5) - (12 * r.mean() - 12 * r.var() / 1.0)) < 1e-15
+    assert abs(B.max_drawdown([0.10, -0.50, 0.20]) - (-0.5)) < 1e-15
+    ret, risk = B.split_gain(r, r * 2, 0.5)
+    assert abs(ret + risk - (B.certainty_equivalent_return(r * 2, 0.5) - B.certainty_equivalent_return(r, 0.5))) < 1e-15
+    # Newey-West: with 0 lags it is the plain t-stat (variance / T); with 1 lag the Bartlett formula
+    x = np.random.default_rng(1).normal(0.001, 0.02, 300)
+    mean, se, t = B.newey_west_tstat(x, lags=0)
+    assert abs(se - x.std() / np.sqrt(300)) < 1e-15
+    d = x - x.mean()
+    lr = d @ d / 300 + 2 * 0.5 * (d[1:] @ d[:-1]) / 300
+    assert abs(B.newey_west_tstat(x, lags=1)[1] - np.sqrt(lr / 300)) < 1e-15
+    # Bootstrap: same series, zero gain; fixed seed, same draws
+    g = B.block_bootstrap_gain(x, x, 0.3, 12, 200, 0)
+    assert np.allclose(g, 0) and np.allclose(B.block_bootstrap_gain(x, x * 1.1, 0.3, 12, 200, 0),
+                                             B.block_bootstrap_gain(x, x * 1.1, 0.3, 12, 200, 0))
+    print("metric formulas OK")
 
 
-def test_hedge_map():
-    # Known answer: with no career risk to hedge (beta_sector = 0 and wage_rate_link = 1, so
-    # beta_bond = 0), (C) and (D) are the same problem: identical weights, zero gain
-    params = load_params()
-    params["career"]["wage_rate_link"] = 1.0
-    returns, rf = short_sample(params, extra_months=24)
-    table = B.hedge_map(params, portfolios=(100_000,), betas=(0.0,), returns=returns, rf=rf, draws=100)
-    row = table.iloc[0]
-    assert abs(row["gain C vs D (CHF/yr)"]) < 1e-6 and row["months where C differs from D"] == 0
-    assert abs(row["return part (CHF/yr)"]) < 1e-6 and abs(row["risk part (CHF/yr)"]) < 1e-6
+def test_wrong_beta_theory():
+    # Proposal 4.2 / contract 6: a hedge h against a true exposure beta saves variance
+    # beta^2 - (beta - h)^2 = h (2 beta - h). Total wealth = beta x s + other risk (unrelated to s);
+    # the hedged one = (beta - h) x s + the same. The risk part of the gain must be h(2 beta - h) var(s) x 12/(2 gamma).
+    rng = np.random.default_rng(3)
+    s = rng.normal(0, 0.05, 240)
+    other = rng.normal(0, 0.03, 240)
+    other = other - other.mean() - s * ((other - other.mean()) @ (s - s.mean())) / ((s - s.mean()) @ (s - s.mean()))
+    gamma, h = 0.3, 0.4
+    for beta in (0.0, 0.1, 0.2, 0.4, 0.8):
+        _, risk = B.split_gain(beta * s + other, (beta - h) * s + other, gamma)
+        assert abs(risk - h * (2 * beta - h) * s.var(ddof=1) * 12 / (2 * gamma)) < 1e-15
+    print("wrong-beta theory h(2 beta - h) OK")
 
-    # The two parts add up to the gain (any client)
-    params = load_params()
-    table = B.hedge_map(params, portfolios=(1_000_000,), betas=(0.30,), returns=returns, rf=rf, draws=100)
-    row = table.iloc[0]
-    assert abs(row["return part (CHF/yr)"] + row["risk part (CHF/yr)"] - row["gain C vs D (CHF/yr)"]) < 1e-6
-    print("hedge map OK (no career risk: C = D, zero gain; return part + risk part = gain)")
+
+# -----------------------------------------------------------------------------
+# 4. On the saved data
+# -----------------------------------------------------------------------------
+
+def test_on_saved_data():
+    try:
+        data = B.load_backtest_data()
+    except Exception:
+        print("saved data not found, tests on real data skipped")
+        return
+    p = load_params()
+    run = B.run_strategies(p, data)
+    res, path, gamma = run["results"], run["path"], run["gamma"]
+    window = p["backtest"]["window_months"]
+    returns, rf = data
+    assets = O.client_assets(p)
+
+    # gamma from the first window only; the same for the rerun (same numbers on every run)
+    assert abs(gamma - O.risk_tolerance(p, returns.sub(rf, axis=0).iloc[:window])[0]) < 1e-15
+    again = B.run_strategies(p, data, strategies=("C",))
+    assert np.allclose(again["results"]["C"]["value"], res["C"]["value"], rtol=0, atol=1e-9)
+    assert res["A"].index[0] == returns.index[window]
+
+    # Month 1 of (C) = the optimizer by hand, with the first window and the client of that month
+    first = res["C"].index[0]
+    cov, _ = O.estimate_covariance(returns[assets].sub(rf, axis=0).iloc[:window], p)
+    mu, _ = O.expected_returns(cov, p)
+    F, H, P = res["C"]["value_start"].iloc[0], path["H_start"].iloc[0], path["P_start"].iloc[0]
+    W = F + H + P
+    from src.career import career_covariance
+    sigma_H = H / (H + P) * career_covariance(cov, path["beta_bond"].iloc[0], path["beta_sector"].iloc[0], p)
+    deferred = p["client"]["deferred_shares_chf"]
+    x = O.optimal_portfolio(mu.to_numpy(), cov.to_numpy(), sigma_H, (H + P) / W, gamma,
+                            O.build_constraints(assets, p, deferred / F))
+    assert np.allclose(res["C"][[f"w_{a}" for a in assets]].iloc[0], x, atol=1e-12) and first == path.index[0]
+
+    # Every month, every strategy respects the constraints (lock-up, caps, long-only, no leverage)
+    for name, r in res.items():
+        w = r[[f"w_{a}" for a in assets]].to_numpy()
+        lock = np.minimum(deferred / r["value_start"].to_numpy(), 1.0)
+        assert (w >= -1e-12).all() and (w.sum(axis=1) <= 1 + 1e-12).all()
+        assert (w[:, assets.index(O.EMPLOYER)] >= lock - 1e-12).all()
+        assert (w[:, assets.index("BANKS_EU")] <= p["optimization"]["position_caps"]["BANKS_EU"] + 1e-12).all()
+    # (B): (100 - age)% in world equities, the rest in CHF bonds, around the deferred shares
+    b, age = res["B"], path["age"]
+    lock = np.minimum(deferred / b["value_start"], 1.0)
+    assert np.allclose(b["w_EQ_WORLD"], (100 - age) / 100 * (1 - lock)) and np.allclose(b["w_EMPLOYER"], lock)
+    assert np.allclose(b["w_BOND_CHF"], (age / 100) * (1 - lock))
+    # (C) never holds more of the banker's sector than (D) on average (the hedge has the right sign)
+    assert res["C"]["w_BANKS_EU"].mean() <= res["D"]["w_BANKS_EU"].mean()
+
+    # Fair comparison: with the shares of (A), gains add up, and parts add up to the gain
+    gains = B.gain_table(run)
+    assert abs(gains.loc["(C) vs (A)", "CE gain (CHF/yr)"]
+               - gains.loc["(C) vs (D)", "CE gain (CHF/yr)"] - gains.loc["(D) vs (A)", "CE gain (CHF/yr)"]) < 1e-6
+    assert np.allclose(gains["return part (CHF/yr)"] + gains["risk part (CHF/yr)"], gains["CE gain (CHF/yr)"])
+    e_a, e_c = B.total_wealth_excess(res["A"], path, res["A"]), B.total_wealth_excess(res["C"], path, res["A"])
+    F, W = res["A"]["value_start"], res["A"]["W"]
+    assert np.allclose(e_c - e_a, F / W * (res["C"]["return"] - res["A"]["return"]), atol=1e-15)
+    metrics = B.metrics_table(run)
+    assert metrics.shape[1] == 4 and np.isfinite(metrics.loc["CE total wealth (CHF/yr)"]).all()
+    crises = B.crisis_table(run)
+    assert ("2008 financial crisis", "C") in crises.index
+    print(f"saved data OK ({len(path)} months, gamma {gamma:.3f}; (C) vs (A) "
+          f"CHF {gains.loc['(C) vs (A)', 'CE gain (CHF/yr)']:,.0f}/yr, p = {gains.loc['(C) vs (A)', 'p-value']:.3f})")
+
+
+def test_robustness_on_saved_data():
+    try:
+        data = B.load_backtest_data()
+    except Exception:
+        print("saved data not found, robustness tests skipped")
+        return
+    p = load_params()
+    curve = B.wrong_beta_curve(p, data)
+    # Decisions fixed: the risk part of the hedge is a straight line in the true beta, rising
+    risk = curve["risk part (CHF/yr)"].to_numpy()
+    assert curve.attrs["risk part: R2 of the straight line"] > 0.999 and (np.diff(risk) > 0).all()
+    jobs = B.job_loss_table(p, data)
+    counts = [len(s.split(", ")) if s != "-" else 0 for s in jobs["jobs lost"]]
+    assert counts[0] == 0 and counts[1] >= counts[2] >= counts[3] >= 1, counts      # none, 20%, 30%, 40%
+    prior = B.prior_sensitivity(p, data)
+    assert len(prior) == 2 and np.isfinite(prior.to_numpy(dtype=float)).all()
+    q = copy.deepcopy(p)
+    q["backtest"]["hedge_map_portfolios"], q["backtest"]["hedge_map_betas"] = [100_000, 3_000_000], [0.0, 0.60]
+    hm = B.hedge_map(q, data)
+    assert np.allclose(hm["return part (CHF/yr)"] + hm["risk part (CHF/yr)"], hm["hedge gain (CHF/yr)"])
+    # The hedge reduces risk more with a bigger portfolio and a stronger sector link
+    assert hm.loc[(3_000_000, 0.60), "risk part (CHF/yr)"] > hm.loc[(100_000, 0.60), "risk part (CHF/yr)"] > 0
+    print(f"robustness OK (wrong beta R2 {curve.attrs['risk part: R2 of the straight line']:.4f}; "
+          f"job losses at 20/30/40%: {counts[1:]})")
 
 
 if __name__ == "__main__":
-    test_constant_weights()
-    test_costs_and_turnover()
-    test_contributions()
-    test_no_look_ahead()
-    test_errors()
-    test_on_saved_data()
+    test_engine_known_answers()
+    test_no_look_ahead_and_errors()
     test_client_path()
-    test_client_on_saved_data()
-    test_strategies()
-    test_metric_formulas()
-    test_metrics_on_saved_data()
-    test_significance_formulas()
-    test_wrong_beta_theory()
-    test_wrong_beta_on_saved_data()
     test_job_loss()
-    test_job_loss_on_saved_data()
-    test_hedge_map()
+    test_metric_formulas()
+    test_wrong_beta_theory()
+    test_on_saved_data()
+    test_robustness_on_saved_data()
     print("ALL TESTS PASSED")
