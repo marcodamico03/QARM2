@@ -107,7 +107,10 @@ def test_pipeline():
     def fake_kf(file):
         if file == "Developed_3_Factors":
             return pd.DataFrame({"Mkt-RF": rng.normal(0.006, 0.045, len(months)), "RF": 0.002}, index=months)
-        return pd.DataFrame({"Banks": rng.normal(0.008, 0.06, len(months))}, index=months)
+        kf_months = pd.date_range("1926-07-31", "2026-10-31", freq="ME")
+        names = ["Banks", "Insur", "Fin", "Softw", "Hardw", "Chips", "Telcm", "Hlth", "MedEq", "Drugs", "Mach", "ElcEq",
+                 "FabPr", "Autos", "Rtail", "Food", "Hshld", "Meals", "Fun", "Oil", "Coal", "Cnstr", "BldMt", "Util"]
+        return pd.DataFrame(rng.normal(0.008, 0.06, (len(kf_months), len(names))), index=kf_months, columns=names)
 
     def fake_snb(cube, code):
         m = pd.date_range("1988-01-31", "2026-10-31", freq="ME")
@@ -157,6 +160,11 @@ def test_pipeline():
         assert np.allclose(back.values, returns.loc["2010"].values)
         assert len(D.load_rf("2010-01-01", "2010-12-31", params=params)) == 12
 
+        # sector menu: saved separately, same dates as the core universe, no holes
+        sectors = D.load_sector_returns(params=params)
+        assert list(sectors.columns) == list(params["data"]["sectors"]) and sectors.index.equals(returns.index)
+        assert sectors.notna().all().all()
+
         # offline: all downloads fail -> the saved raw copies give the same result
         def offline(*args, **kwargs):
             raise ConnectionError("no internet")
@@ -164,7 +172,7 @@ def test_pipeline():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             returns2, rf2, _ = D.build_data(params, verbose=False)
-        assert np.allclose(returns2.values, returns.values) and np.allclose(rf2.values, rf.values)
+        assert np.allclose(returns2[CONTRACT_COLUMNS].values, returns.values) and np.allclose(rf2.values, rf.values)
         print("pipeline OK")
     finally:
         D.download_yahoo, D.download_fred, D.download_kenfrench, D.download_snb = real

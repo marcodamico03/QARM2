@@ -92,6 +92,15 @@ Every time series is a `pandas.DataFrame` (or `Series`):
 
 Risk-free rate: `RF_CHF` (monthly CHF short rate), stored separately.
 
+**Sector menu** (for clients whose career is tied to another sector), stored separately
+in `data/sectors_chf.csv`, same dates as the universe: `SEC_FIN`, `SEC_TECH`, `SEC_HEALTH`,
+`SEC_INDU`, `SEC_CONS`, `SEC_STAPLES`, `SEC_ENERGY`, `SEC_MATERIALS`. For a client, the
+universe is the table above plus the column of the client's sector.
+
+**Personas** (`params.yaml`, section `personas`): banker, tech engineer, dentist, engineer
+in industry, shop owner, construction worker, energy employee, civil servant. Each has an
+age, a salary, a sector and a beta_sector.
+
 ---
 
 ## 3. Function contract
@@ -104,8 +113,12 @@ is free. If you need a new input, propose it in a pull request first.
 | `src/config.py` | `load_params()` | none | `dict` with everything in `config/params.yaml` |
 | `src/data.py` | `load_returns(start, end)` | dates as `"YYYY-MM-DD"` | `DataFrame` of monthly CHF returns, columns from Section 2 |
 | `src/data.py` | `load_rf(start, end)` | dates | `Series` of the monthly CHF risk-free rate |
+| `src/data.py` | `load_sector_returns(start, end)` | dates | `DataFrame` of monthly CHF returns of the sector menu |
 | `src/career.py` | `career_return(bond_ret, sector_ret, beta_bond, beta_sector)` | monthly excess-return `Series` | `Series` of the career's monthly excess return |
 | `src/career.py` | `human_capital(age, salary, params)` | age, annual salary in CHF | value of human capital H in CHF |
+| `src/career.py` | `params_for_persona(params, name)` | params, persona name | copy of params set up for that persona |
+| `src/career.py` | `career_betas(age, params)` | age, params | beta_bond (duration rule), beta_sector, discount rate of H |
+| `src/career.py` | `career_covariance(cov, beta_bond, beta_sector, params)` | covariance `DataFrame`, betas | `sigma_H = Cov(R, R_H)`, `ndarray` |
 | `src/optimizer.py` | `bl_expected_returns(cov, w_mkt, phi, P, Q, omega_views, tau)` | arrays | expected excess returns, `ndarray` (lab LN4 method) |
 | `src/optimizer.py` | `optimal_portfolio(mu, cov, sigma_H, omega, gamma, constraints)` | arrays and floats | weights of the risky assets, `ndarray` (the rest is cash) |
 | `src/optimizer.py` | `risk_contributions(x, cov)` | weights, covariance | `ndarray` of absolute risk contributions (lab LN5 formula) |

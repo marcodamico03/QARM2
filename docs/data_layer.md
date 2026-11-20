@@ -22,6 +22,7 @@ excess = returns.sub(rf, axis=0)                     # what the optimizer uses
 - `data/rf_chf.csv`: `RF_CHF`, the CHF risk-free rate for the month (it can be negative).
 - Only months where every asset and the risk-free rate have data are kept, so there are no holes.
 - Only finished months are kept: on 18 November the last month is October, never the current month.
+- `data/sectors_chf.csv`: the **sector menu** (`SEC_FIN, SEC_TECH, SEC_HEALTH, SEC_INDU, SEC_CONS, SEC_STAPLES, SEC_ENERGY, SEC_MATERIALS`), with the same dates. These are US Select Sector SPDR ETFs (available since December 1998) converted to CHF, with Ken French industries as proxies before. Read with `load_sector_returns`.
 - `data/coverage.csv`: which source is used for each asset and period.
 - `data/raw/`: raw downloads. If a website is down, the saved copy is used automatically.
 
