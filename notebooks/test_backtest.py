@@ -414,6 +414,25 @@ def test_job_loss_on_saved_data():
     return table
 
 
+def test_hedge_map():
+    # Known answer: with no career risk to hedge (beta_sector = 0 and wage_rate_link = 1, so
+    # beta_bond = 0), (C) and (D) are the same problem: identical weights, zero gain
+    params = load_params()
+    params["career"]["wage_rate_link"] = 1.0
+    returns, rf = short_sample(params, extra_months=24)
+    table = B.hedge_map(params, portfolios=(100_000,), betas=(0.0,), returns=returns, rf=rf, draws=100)
+    row = table.iloc[0]
+    assert abs(row["gain C vs D (CHF/yr)"]) < 1e-6 and row["months where C differs from D"] == 0
+    assert abs(row["return part (CHF/yr)"]) < 1e-6 and abs(row["risk part (CHF/yr)"]) < 1e-6
+
+    # The two parts add up to the gain (any client)
+    params = load_params()
+    table = B.hedge_map(params, portfolios=(1_000_000,), betas=(0.30,), returns=returns, rf=rf, draws=100)
+    row = table.iloc[0]
+    assert abs(row["return part (CHF/yr)"] + row["risk part (CHF/yr)"] - row["gain C vs D (CHF/yr)"]) < 1e-6
+    print("hedge map OK (no career risk: C = D, zero gain; return part + risk part = gain)")
+
+
 if __name__ == "__main__":
     test_constant_weights()
     test_costs_and_turnover()
@@ -431,4 +450,5 @@ if __name__ == "__main__":
     test_wrong_beta_on_saved_data()
     test_job_loss()
     test_job_loss_on_saved_data()
+    test_hedge_map()
     print("ALL TESTS PASSED")

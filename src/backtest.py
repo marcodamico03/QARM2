@@ -518,3 +518,58 @@ def job_loss_table(params=None, thresholds=(None, 0.20, 0.30, 0.40), returns=Non
             row[f"2008 W change ({name}) (CHF)"] = crisis.loc[("2008", name), "total wealth change (CHF)"]
         rows.append(row)
     return pd.DataFrame(rows).set_index("threshold")
+
+
+# =============================================================================
+# 4.5 Robustness, part 4: when does the hedge matter?
+# =============================================================================
+
+def hedge_map(params=None, portfolios=(100_000, 300_000, 1_000_000, 3_000_000), betas=(0.15, 0.30, 0.60),
+              returns=None, rf=None, draws=1000, seed=0):
+    """The value of the hedge, (C) over (D), for different clients: starting portfolio x beta_sector
+    (the adviser knows the true beta here). (C) - (D) is the FULL hedging term: less of the career's
+    bond (CHF bonds) and less of its sector. For each client: fair certainty-equivalent gain in CHF
+    per year (same wealth shares) and as a share of the average portfolio, block-bootstrap p-value,
+    the average difference C - D in the sector and in CHF bonds, and the share of months in which
+    the two portfolios differ (more than 0.1 percentage point in some asset).
+
+    The gain is split in its two parts, because a hedge is meant to reduce RISK:
+        return part = 12 x (mean of C - mean of D)                 x average W
+        risk part   = -12 x (variance of C - variance of D) / (2 gamma) x average W
+    On 2005-2026 the risk part is positive in every case (the hedge lowers total-wealth volatility),
+    while the return part can be negative: to hedge a strong sector link (C) also cuts equities,
+    which boomed in that period. A negative total measures one bull market, not a failed hedge."""
+    import copy
+    from src.config import load_params
+    if params is None:
+        params = load_params()
+    if returns is None or rf is None:
+        from src.data import load_returns, load_rf, load_sector_returns
+        returns, rf = load_returns().join(load_sector_returns()), load_rf()
+    bond, sector = params["data"]["career_bond_asset"], params["data"]["career_sector_asset"]
+    rows = []
+    for F0 in portfolios:
+        for beta in betas:
+            p = copy.deepcopy(params)
+            p["client"]["portfolio_chf"] = F0
+            p["career"]["beta_sector"] = beta
+            results, path, gamma = run_strategies(p, returns, rf, strategies=("C", "D"))
+            c, d = results["C"], results["D"]
+            gain, boot = block_bootstrap_ce_gain(total_wealth_excess(d, path, rf),
+                                                 same_wealth_excess(c, d, path, rf), gamma, draws=draws, seed=seed)
+            a, b = total_wealth_excess(d, path, rf), same_wealth_excess(c, d, path, rf)
+            W = d["W"].mean()
+            weights = [col for col in c.columns if col.startswith("w_")]
+            differ = (c[weights] - d[weights]).abs().max(axis=1) > 0.001
+            rows.append({"start portfolio (CHF)": F0, "beta_sector": beta,
+                         "portfolio / total wealth (avg)": float((d["value"] / d["W"]).mean()),
+                         "gain C vs D (CHF/yr)": gain * d["W"].mean(),
+                         "gain as % of avg portfolio": gain * d["W"].mean() / d["value"].mean(),
+                         "p-value": float((boot <= 0).mean()),
+                         "return part (CHF/yr)": 12 * (b.mean() - a.mean()) * W,
+                         "risk part (CHF/yr)": -12 * (b.var() - a.var()) / (2 * gamma) * W,
+                         "total wealth vol D": a.std() * np.sqrt(12), "total wealth vol C": b.std() * np.sqrt(12),
+                         "avg C - D in sector": float((c[f"w_{sector}"] - d[f"w_{sector}"]).mean()) if sector else 0.0,
+                         "avg C - D in CHF bonds": float((c[f"w_{bond}"] - d[f"w_{bond}"]).mean()),
+                         "months where C differs from D": float(differ.mean())})
+    return pd.DataFrame(rows).set_index(["start portfolio (CHF)", "beta_sector"])
