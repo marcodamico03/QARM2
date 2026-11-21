@@ -2,8 +2,9 @@
 
 The backtest of a client takes a few seconds. The app asks for it, shows the rest of the
 page at once, and checks again every second; meanwhile the client can keep changing the
-inputs. One job at a time: a job that has not started yet is dropped when a newer one of the
-same kind arrives (the client moved a slider again).
+inputs. One queue per kind of job (backtest, prior check, robustness), so a long robustness
+test never delays a backtest. In each queue one job runs at a time, and a job that has not
+started yet is dropped when a newer one arrives (the client changed the inputs again).
 No Streamlit here.
 """
 import threading
@@ -12,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 class Jobs:
     def __init__(self):
-        self._pool = ThreadPoolExecutor(max_workers=1)
+        self._pools = {}                   # group -> its own queue
         self._futures = {}                 # key -> (group, future)
         self._lock = threading.Lock()
 
@@ -27,7 +28,9 @@ class Jobs:
                     del self._futures[other]
                 elif future.done():
                     del self._futures[other]
-            future = self._pool.submit(compute)
+            if group not in self._pools:
+                self._pools[group] = ThreadPoolExecutor(max_workers=1)
+            future = self._pools[group].submit(compute)
             self._futures[key] = (group, future)
             return future
 

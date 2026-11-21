@@ -1,12 +1,12 @@
-"""Compute the backtests of the app once, before showing it (step 5).
+"""Optional: compute the backtests of the app in advance (step 5).
 
-The app computes a backtest the first time a client is shown (a few seconds) and keeps it in
-data/cache/. This script does it in advance for every persona with its default settings, so the
-demo is instant from the first click.
+Not needed to use the app: it computes the backtest of each client by itself, in the background,
+the first time the client is shown (a few seconds), and keeps it in data/cache/. This script only
+does it in advance for every persona with its default settings.
 
 Run from the project folder:
     python -m src.precompute                 backtest and prior check of every persona (about 1 minute)
-    python -m src.precompute --robustness    also the robustness tests (about 5 minutes in all)
+    python -m src.precompute --robustness    also the robustness tests (about 5 minutes)
 """
 import sys
 import time

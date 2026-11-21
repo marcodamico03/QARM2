@@ -1,6 +1,6 @@
 """Tests of the app (step 5): the numbers in src/dashboard.py, the results kept on disk, the
-background jobs, then the app itself, run headless with Streamlit's own test tool (both pages,
-every persona).
+background jobs, then the app itself, run headless with Streamlit's own test tool (every
+persona, other settings).
 
 Run from the project folder (about two minutes the first time, then the backtests are saved):
     python notebooks/test_app.py
@@ -92,6 +92,13 @@ def test_saved_results():
     a = D.client_params("banker")
     b = D.client_params("banker", {"salary_chf": 130_000.0, "age": 35.0})
     assert D.cache_key("backtest", a) == D.cache_key("backtest", b)
+    # the app's default inputs give the same client as the persona (so saved results are found)
+    p = load_params()["personas"]["banker"]
+    page = D.client_params("banker", {"age": p["age"], "salary_chf": p["salary_chf"], "portfolio_chf": 100_000,
+                                      "deferred_shares_chf": p["deferred_shares_chf"], "pension_chf": None,
+                                      "beta_sector": p["beta_sector"] * 1.0, "wage_rate_link": 0.5, "long_only": True,
+                                      "no_leverage": True, "sector_cap": 0.1, "view": None})
+    assert D.cache_key("backtest", a) == D.cache_key("backtest", page)
     assert D.cache_key("backtest", a) != D.cache_key("backtest", D.client_params("banker", {"age": 36}))
     first = D.remember("backtest", a)                          # computed (or read) once ...
     again = D.remember("backtest", b)                          # ... then read from disk
@@ -112,7 +119,9 @@ def test_theme():
     assert T.chf(-2500, short=False) == "−CHF 2'500" and T.pct(0.0291, 1) == "2.9%"
     assert "\n\n" not in T.css()                       # a blank line would end the HTML block in Markdown
     sheet = {"H": 3e6, "P": 5e4, "F": 1e5, "W": 3.15e6}
-    assert T.ribbon(sheet).count('class="career"') == 1 and "CHF 3.00 m" in T.ribbon(sheet)
+    bar = T.wealth(sheet)
+    assert bar.count("flex:") == 3 and "CHF 3.00 m" in bar and "CHF 3.15 m" in bar
+    assert "Typical" in T.bar_row("Typical", {"EQ_WORLD": 0.6, "BOND_CHF": 0.4}, labels=False)
     print("theme OK")
 
 
@@ -128,17 +137,15 @@ def test_app_headless():
             D.remember(kind, D.client_params(name, None, base))
     at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=180).run()
     assert not at.exception, at.exception
-    for name in base["personas"]:                             # page "Your plan", every job
-        at.selectbox(key="plan_job").set_value(name).run()
+    for name in base["personas"]:                             # every job of the menu
+        at.selectbox(key="job").set_value(name).run()
         assert not at.exception, (name, at.exception)
-    at.selectbox(key="plan_job").set_value("banker").run()
-    at.number_input(key="plan_age_banker").set_value(55).run()
+    at.selectbox(key="job").set_value("banker").run()
+    at.number_input(key="age_banker").set_value(58).run()
     assert not at.exception, at.exception
-    at.switch_page("views/analyst.py").run()                 # page "Analyst view"
+    at.toggle(key="lev_banker").set_value(False).run()       # rules off: the page still works
     assert not at.exception, at.exception
-    at.slider(key="age_banker").set_value(45).run()
-    assert not at.exception, at.exception
-    print("both pages run for every persona, OK")
+    print("the app runs for every persona and other settings, OK")
 
 
 if __name__ == "__main__":

@@ -242,9 +242,9 @@ backtest:
   # which banks 2.5), Swiss real estate 5; emerging bonds and hedge funds (no asset) removed. In %, rescaled.
   swiss_prior: {BOND_CHF: 30.0, BOND_GLB_H: 15.0, EQ_CH: 15.0, EQ_WORLD: 22.5, BANKS_EU: 2.5, REIT_CH: 5.0}
 
-# App (step 5): what the client can enter on the page "Your plan", and how the pages are drawn.
+# App (step 5): what the client can enter in the side panel, and how the page is drawn.
 app:
-  jobs:                      # the job menu of "Your plan": one persona each (labels for the client)
+  jobs:                      # the job menu: one persona each (labels for the client)
     banker: "Banking"
     tech_engineer: "Technology"
     dentist: "Dentist, self-employed"
@@ -283,8 +283,9 @@ app:
   significance: 0.05         # a p-value above 5% is called "less certain"
   labels_apart: 0.08         # backtest chart: the end labels move apart when the two lines end within 8%
   poll_seconds: 1            # while the backtest runs in the background, the page checks every second
-  # Analyst view (side panel)
-  portfolio_choices: [10000, 25000, 50000, 100000, 200000, 300000, 500000, 1000000, 2000000, 5000000]
+  risk_other: 0.005          # tab Risk: pieces below 0.5% of the risk are shown together as "Other"
+  # Advanced settings (side panel)
+  cap_range: [0.05, 0.05]    # most in one sector or stock: minimum and step of the slider
   view_return_range: [-0.05, 0.15, 0.005]   # Black-Litterman view: min, max, step (annual, above cash)
   view_default: 0.05
   view_confidence: {Low: 0.10, Medium: 0.05, High: 0.02}   # sd of the view
