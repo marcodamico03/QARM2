@@ -15,3 +15,6 @@ env/
 # Editor and system files
 .vscode/
 .DS_Store
+
+# Results of the app kept on disk (python -m src.precompute)
+data/cache/

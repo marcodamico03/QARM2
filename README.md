@@ -13,15 +13,21 @@ The full design is in `docs/` (concept note).
 
 ```bash
 pip install -r requirements.txt
+python -m src.precompute
 streamlit run app.py
 ```
+
+`python -m src.precompute` computes the backtests once (about one minute), so the app shows them at once.
 
 ## Project structure
 
 | Path | What it contains |
 |---|---|
-| `app.py` | Streamlit home page |
-| `pages/` | One file per app page |
+| `app.py` | The Streamlit app: two pages, see `docs/app.md` |
+| `views/plan.py`, `views/analyst.py` | Page "Your plan" (the client) and page "Analyst view" (every number) |
+| `src/dashboard.py`, `src/theme.py` | Numbers and look of the app |
+| `src/jobs.py`, `src/precompute.py` | Backtests in the background, and computed in advance |
+| `pages/` | Not used: the pages are in `views/` |
 | `config/params.yaml` | Shared parameters used by every module |
 | `src/data.py` | Downloads, cleaning, CHF conversion |
 | `src/career.py` | Career model and human capital |

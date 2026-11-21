@@ -241,3 +241,51 @@ backtest:
   # hedged world bonds 10 + euro corporates 5, Swiss equities 15, global equities 20 + small caps 5 (of
   # which banks 2.5), Swiss real estate 5; emerging bonds and hedge funds (no asset) removed. In %, rescaled.
   swiss_prior: {BOND_CHF: 30.0, BOND_GLB_H: 15.0, EQ_CH: 15.0, EQ_WORLD: 22.5, BANKS_EU: 2.5, REIT_CH: 5.0}
+
+# App (step 5): what the client can enter on the page "Your plan", and how the pages are drawn.
+app:
+  jobs:                      # the job menu of "Your plan": one persona each (labels for the client)
+    banker: "Banking"
+    tech_engineer: "Technology"
+    dentist: "Dentist, self-employed"
+    factory_engineer: "Industry"
+    shop_owner: "Shop owner, self-employed"
+    builder: "Construction"
+    energy_worker: "Energy"
+    civil_servant: "Public sector"
+  sector_words:              # the client's sector in a sentence ("when ... do badly")
+    BANKS_EU: "European banks"
+    SEC_FIN: "financial companies"
+    SEC_TECH: "tech companies"
+    SEC_HEALTH: "health care companies"
+    SEC_INDU: "industrial companies"
+    SEC_CONS: "shops, hotels and restaurants"
+    SEC_STAPLES: "food and household companies"
+    SEC_ENERGY: "energy companies"
+    SEC_MATERIALS: "construction and materials companies"
+  age_range: [20, 64]
+  salary_range: [30000, 500000]
+  salary_step: 5000
+  savings_range: [5000, 10000000]
+  savings_step: 5000
+  pension_max: 3000000
+  pension_step: 5000
+  shares_step: 1000
+  # "How much does your pay follow your industry?": multiplier of the persona's beta_sector
+  # (the same range as the wrong-beta test of the backtest)
+  sector_link: {"Not at all": 0.0, "A little": 1.0, "A lot": 2.0}
+  sector_link_default: "A little"
+  glide_step_years: 2        # the plan by age is optimised again every 2 years until retirement
+  min_weight: 0.0005         # holdings below 0.05% are not shown
+  bond_gap: 0.05             # the page says "your job already does that for you" when typical advice holds at
+                             # least 5 points more bonds than ours
+  bonds_visible: 0.01        # "then bonds come in": the first age with at least 1% in bonds
+  significance: 0.05         # a p-value above 5% is called "less certain"
+  labels_apart: 0.08         # backtest chart: the end labels move apart when the two lines end within 8%
+  poll_seconds: 1            # while the backtest runs in the background, the page checks every second
+  # Analyst view (side panel)
+  portfolio_choices: [10000, 25000, 50000, 100000, 200000, 300000, 500000, 1000000, 2000000, 5000000]
+  view_return_range: [-0.05, 0.15, 0.005]   # Black-Litterman view: min, max, step (annual, above cash)
+  view_default: 0.05
+  view_confidence: {Low: 0.10, Medium: 0.05, High: 0.02}   # sd of the view
+
