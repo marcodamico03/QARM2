@@ -1,0 +1,14 @@
+# Settings of the app (step 5).
+
+[client]
+toolbarMode = "minimal"        # no "Deploy" button and no developer menu: the app as a client sees it
+
+[server]
+runOnSave = true               # the app reloads by itself when a file is saved
+
+[theme]                        # dark, the same colours as src/theme.py
+base = "dark"
+primaryColor = "#D9B46C"
+backgroundColor = "#0E1014"
+secondaryBackgroundColor = "#1C2028"
+textColor = "#ECEEF2"

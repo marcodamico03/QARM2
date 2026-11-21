@@ -106,6 +106,72 @@ data:
         - {type: yahoo, tickers: ["XLB"], currency: USD}
         - {type: kf_industry, file: "49_Industry_Portfolios", column: "BldMt", currency: USD}
 
+  # ---------------------------------------------------------------------------
+  # Version 2 universe (docs/pivot plan): world equities split into the 12 Fama-French
+  # industries, so the client's own industry can be left out, plus corporate bonds and
+  # commodities as diversifiers. Saved in data/universe2_chf.csv (load_universe2_returns).
+  # Industries: value-weighted US portfolios (Kenneth French), converted to CHF.
+  # ---------------------------------------------------------------------------
+  universe2:
+    IND_NODUR:
+      label: "Consumer non-durables (food, drinks, household goods)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "NoDur", currency: USD}
+    IND_DURBL:
+      label: "Consumer durables (cars, appliances, furniture)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Durbl", currency: USD}
+    IND_MANUF:
+      label: "Manufacturing (machinery, industrial goods)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Manuf", currency: USD}
+    IND_ENRGY:
+      label: "Energy (oil, gas, coal)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Enrgy", currency: USD}
+    IND_CHEMS:
+      label: "Chemicals"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Chems", currency: USD}
+    IND_BUSEQ:
+      label: "Business equipment (computers, software, electronics)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "BusEq", currency: USD}
+    IND_TELCM:
+      label: "Telecom (telephone and television)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Telcm", currency: USD}
+    IND_UTILS:
+      label: "Utilities"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Utils", currency: USD}
+    IND_SHOPS:
+      label: "Shops (retail, wholesale, some services)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Shops", currency: USD}
+    IND_HLTH:
+      label: "Health care (medical equipment, drugs)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Hlth", currency: USD}
+    IND_MONEY:
+      label: "Finance (banks, insurance, trading)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Money", currency: USD}
+    IND_OTHER:
+      label: "Other (mines, construction, transport, hotels, business services)"
+      sources:
+        - {type: kf_industry, file: "12_Industry_Portfolios", column: "Other", currency: USD}
+    BOND_CORP:
+      label: "Corporate bonds (US investment grade, hedged to CHF)"
+      sources:
+        - {type: yahoo, tickers: ["LQD"], currency: USD, hedged: true, foreign_rf: "DTB3"}     # iShares iBoxx $ IG (from 2002)
+        - {type: fred_yield, series: "AAA", duration: 8.0, currency: USD, hedged: true, foreign_rf: "DTB3"}  # before: synthetic from Moody's Aaa corporate yield (FRED, monthly since 1919)
+    COMMOD:
+      label: "Commodities (S&P GSCI)"
+      sources:
+        - {type: yahoo, tickers: ["GSG"], currency: USD}                   # iShares S&P GSCI Commodity (from 2006)
+        - {type: yahoo, tickers: ["^SPGSCI"], currency: USD}               # S&P GSCI index, before the ETF
+
   # Which asset plays which role in the career model (proposal, section 3.1)
   career_bond_asset: "BOND_CHF"     # R_B
   career_sector_asset: "BANKS_EU"   # R_S of the default client (each persona has its own, see personas)
@@ -137,15 +203,18 @@ client:                      # default persona: the Zurich banker
 # the client's own data): small values on purpose, because overestimating it is costly
 # and underestimating it is not (proposal, section 4.2). pillar2 = false for self-employed.
 # deferred_shares_chf: employer shares under lock-up (only the banker: the employer stock is UBS).
+# Version 2 (src/allocation.py): industry = the client's Fama-French industry (null = none),
+# variable_pay = share of pay that moves with the industry (bonus, business income), stake_chf = shares
+# of the employer or own business already held (part of the savings), unlock_years = when they can be sold.
 personas:
-  banker:           {label: "Banker, Zurich",          age: 35, salary_chf: 130000, sector: "BANKS_EU",   beta_sector: 0.15, pillar2: true, deferred_shares_chf: 15000}
-  tech_engineer:    {label: "Software engineer",       age: 32, salary_chf: 140000, sector: "SEC_TECH",   beta_sector: 0.15, pillar2: true}
-  dentist:          {label: "Dentist, self-employed",  age: 40, salary_chf: 180000, sector: "SEC_HEALTH", beta_sector: 0.05, pillar2: false}
-  factory_engineer: {label: "Engineer in industry",    age: 45, salary_chf: 115000, sector: "SEC_INDU",   beta_sector: 0.10, pillar2: true}
-  shop_owner:       {label: "Shop owner (florist)",    age: 38, salary_chf: 75000,  sector: "SEC_CONS",   beta_sector: 0.10, pillar2: false}
-  builder:          {label: "Construction worker",     age: 30, salary_chf: 80000,  sector: "SEC_MATERIALS", beta_sector: 0.10, pillar2: true}
-  energy_worker:    {label: "Energy sector employee",  age: 35, salary_chf: 110000, sector: "SEC_ENERGY", beta_sector: 0.15, pillar2: true}
-  civil_servant:    {label: "Civil servant",           age: 35, salary_chf: 100000, sector: null,         beta_sector: 0.00, pillar2: true}
+  banker:           {label: "Banker, Zurich",          age: 35, salary_chf: 130000, sector: "BANKS_EU",   beta_sector: 0.15, pillar2: true, deferred_shares_chf: 15000, industry: "IND_MONEY", variable_pay: 0.30, stake_chf: 15000, unlock_years: 3}
+  tech_engineer:    {label: "Software engineer",       age: 32, salary_chf: 140000, sector: "SEC_TECH",   beta_sector: 0.15, pillar2: true, industry: "IND_BUSEQ", variable_pay: 0.20, stake_chf: 20000, unlock_years: 2}
+  dentist:          {label: "Dentist, self-employed",  age: 40, salary_chf: 180000, sector: "SEC_HEALTH", beta_sector: 0.05, pillar2: false, industry: "IND_HLTH", variable_pay: 0.30, stake_chf: 0, unlock_years: 0}
+  factory_engineer: {label: "Engineer in industry",    age: 45, salary_chf: 115000, sector: "SEC_INDU",   beta_sector: 0.10, pillar2: true, industry: "IND_MANUF", variable_pay: 0.10, stake_chf: 10000, unlock_years: 3}
+  shop_owner:       {label: "Shop owner (florist)",    age: 38, salary_chf: 75000,  sector: "SEC_CONS",   beta_sector: 0.10, pillar2: false, industry: "IND_SHOPS", variable_pay: 0.50, stake_chf: 0, unlock_years: 0}
+  builder:          {label: "Construction worker",     age: 30, salary_chf: 80000,  sector: "SEC_MATERIALS", beta_sector: 0.10, pillar2: true, industry: "IND_OTHER", variable_pay: 0.10, stake_chf: 0, unlock_years: 0}
+  energy_worker:    {label: "Energy sector employee",  age: 35, salary_chf: 110000, sector: "SEC_ENERGY", beta_sector: 0.15, pillar2: true, industry: "IND_ENRGY", variable_pay: 0.20, stake_chf: 25000, unlock_years: 3}
+  civil_servant:    {label: "Civil servant",           age: 35, salary_chf: 100000, sector: null,         beta_sector: 0.00, pillar2: true, industry: null, variable_pay: 0.0, stake_chf: 0, unlock_years: 0}
 
 # Career model (proposal, section 3.1):
 #   career excess return = beta_bond x (BOND_CHF - rf) + beta_sector x (BANKS_EU - rf) + noise
@@ -241,3 +310,119 @@ backtest:
   # hedged world bonds 10 + euro corporates 5, Swiss equities 15, global equities 20 + small caps 5 (of
   # which banks 2.5), Swiss real estate 5; emerging bonds and hedge funds (no asset) removed. In %, rescaled.
   swiss_prior: {BOND_CHF: 30.0, BOND_GLB_H: 15.0, EQ_CH: 15.0, EQ_WORLD: 22.5, BANKS_EU: 2.5, REIT_CH: 5.0}
+
+# App (step 5): what the client can enter in the side panel, and how the page is drawn.
+app:
+  jobs:                      # the job menu: one persona each (labels for the client)
+    banker: "Banking"
+    tech_engineer: "Technology"
+    dentist: "Dentist, self-employed"
+    factory_engineer: "Industry"
+    shop_owner: "Shop owner, self-employed"
+    builder: "Construction"
+    energy_worker: "Energy"
+    civil_servant: "Public sector"
+  industry_names:            # version 2: the 12 industries as the client reads them (None = no industry)
+    IND_NODUR: "Food, drinks and household goods"
+    IND_DURBL: "Cars and household appliances"
+    IND_MANUF: "Manufacturing and machinery"
+    IND_ENRGY: "Energy"
+    IND_CHEMS: "Chemicals and materials"
+    IND_BUSEQ: "Technology"
+    IND_TELCM: "Telecom and media"
+    IND_UTILS: "Utilities"
+    IND_SHOPS: "Retail and services"
+    IND_HLTH: "Health care"
+    IND_MONEY: "Finance (banks, insurance)"
+    IND_OTHER: "Construction, transport and other"
+  no_industry: "Public sector, or pay not linked to an industry"
+  variable_pay_step: 0.05
+  unlock_max_years: 10
+  sector_words:              # the client's sector in a sentence ("when ... do badly")
+    BANKS_EU: "European banks"
+    SEC_FIN: "financial companies"
+    SEC_TECH: "tech companies"
+    SEC_HEALTH: "health care companies"
+    SEC_INDU: "industrial companies"
+    SEC_CONS: "shops, hotels and restaurants"
+    SEC_STAPLES: "food and household companies"
+    SEC_ENERGY: "energy companies"
+    SEC_MATERIALS: "construction and materials companies"
+  age_range: [20, 64]
+  salary_range: [30000, 500000]
+  salary_step: 5000
+  savings_range: [5000, 10000000]
+  savings_step: 5000
+  pension_max: 3000000
+  pension_step: 5000
+  shares_step: 1000
+  # "How much does your pay follow your industry?": multiplier of the persona's beta_sector
+  # (the same range as the wrong-beta test of the backtest)
+  sector_link: {"Not at all": 0.0, "A little": 1.0, "A lot": 2.0}
+  sector_link_default: "A little"
+  glide_step_years: 2        # the plan by age is optimised again every 2 years until retirement
+  min_weight: 0.0005         # holdings below 0.05% are not shown
+  bond_gap: 0.05             # the page says "your job already does that for you" when typical advice holds at
+                             # least 5 points more bonds than ours
+  bonds_visible: 0.01        # "then bonds come in": the first age with at least 1% in bonds
+  significance: 0.05         # a p-value above 5% is called "less certain"
+  labels_apart: 0.08         # backtest chart: the end labels move apart when the two lines end within 8%
+  poll_seconds: 1            # while the backtest runs in the background, the page checks every second
+  risk_other: 0.005          # tab Risk: pieces below 0.5% of the risk are shown together as "Other"
+  # Advanced settings (side panel)
+  cap_range: [0.05, 0.05]    # most in one sector or stock: minimum and step of the slider
+  view_return_range: [-0.05, 0.15, 0.005]   # Black-Litterman view: min, max, step (annual, above cash)
+  view_default: 0.05
+  view_confidence: {Low: 0.10, Medium: 0.05, High: 0.02}   # sd of the view
+
+# Version 2 allocation (src/allocation.py, docs pivot plan): risk budgeting on the savings (LN5-LN6),
+# with the client's stake fixed, the own industry left out, bonds reduced by the bond-like part of
+# wealth (career and pension), and a loss limit before retirement.
+allocation:
+  groups:
+    equities: [IND_NODUR, IND_DURBL, IND_MANUF, IND_ENRGY, IND_CHEMS, IND_BUSEQ, IND_TELCM, IND_UTILS,
+               IND_SHOPS, IND_HLTH, IND_MONEY, IND_OTHER, EQ_CH]
+    real: [REIT_CH, GOLD, COMMOD]
+    bonds: [BOND_CHF, BOND_GLB_H, BOND_CORP]
+  # Risk profile (a first proposal for the group to discuss):
+  #   safe_share: share of the savings in bonds for a client whose wealth is only savings. Our plan (C)
+  #     multiplies it by (1 - bond-like share of wealth): the career's bond part and the pension already
+  #     are safe. Typical advice (A) uses it as it is.
+  #   equities / real: risk budgets of the growth part (they add up to 1)
+  #   loss_tolerance: bad-year loss accepted, in % of the savings (the loss limit adds what can still be
+  #     saved before retirement)
+  profiles:
+    prudent:  {safe_share: 0.50, equities: 0.80, real: 0.20, loss_tolerance: 0.05}
+    balanced: {safe_share: 0.35, equities: 0.85, real: 0.15, loss_tolerance: 0.08}
+    dynamic:  {safe_share: 0.20, equities: 0.90, real: 0.10, loss_tolerance: 0.12}
+  default_profile: balanced
+  loss_confidence: 0.95      # "bad year" = 1 year in 20 (Gaussian, LN6)
+  reserve_months: 0          # cash kept aside before investing, in months of gross salary. 0: the app asks for the
+                             # savings TO INVEST, after the client's own emergency fund
+  stake_idio_vol: 0.25       # company-specific volatility of the stake on top of its industry (single large stock)
+  sharpe_floor: 0.25         # inside a group, budgets follow the Black-Litterman Sharpe ratios, at least 25% of the
+                             # group's average, so no asset is dropped because of a low expected return
+  # Black-Litterman prior for this universe: Doeswijk and Swinkels (2024) shares (equities 49.7%, government
+  # bonds 28.1%, other bonds 15.4%, real estate 4.4%, commodities 2.4%), equities split by MSCI World sector
+  # weights (factsheet, 30 Sep 2026), mapped to the Fama-French industries. 0 = no weight in the prior
+  # (implied return from its covariance with the market).
+  market_weights:
+    equities_share: 0.497
+    sector_weights:          # GICS sector -> Fama-French industry, MSCI World, 30 Sep 2026
+      IND_BUSEQ: 0.3178      # information technology
+      IND_MONEY: 0.1726      # financials 15.74% + real estate 1.52%
+      IND_MANUF: 0.1080      # industrials
+      IND_HLTH: 0.0920       # health care
+      IND_SHOPS: 0.0836      # consumer discretionary
+      IND_TELCM: 0.0831      # communication services
+      IND_NODUR: 0.0477      # consumer staples
+      IND_ENRGY: 0.0403      # energy
+      IND_CHEMS: 0.0321      # materials
+      IND_UTILS: 0.0230      # utilities
+    BOND_GLB_H: 0.281
+    BOND_CORP: 0.154
+    REIT_CH: 0.044
+    GOLD: 0.012
+    COMMOD: 0.012
+  rebalance_months: 3        # backtest: the plan is solved again every 3 months (holdings drift in between)
+
