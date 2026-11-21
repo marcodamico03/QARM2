@@ -391,10 +391,14 @@ allocation:
   #   equities / real: risk budgets of the growth part (they add up to 1)
   #   loss_tolerance: bad-year loss accepted, in % of the savings (the loss limit adds what can still be
   #     saved before retirement)
+  #   Balanced starts from the same 40% bonds as the typical 60/40, so for a balanced client the only
+  #   difference between (A) and (C) is the job.
   profiles:
-    prudent:  {safe_share: 0.50, equities: 0.80, real: 0.20, loss_tolerance: 0.05}
-    balanced: {safe_share: 0.35, equities: 0.85, real: 0.15, loss_tolerance: 0.08}
-    dynamic:  {safe_share: 0.20, equities: 0.90, real: 0.10, loss_tolerance: 0.12}
+    prudent:  {safe_share: 0.55, equities: 0.80, real: 0.20, loss_tolerance: 0.05}
+    balanced: {safe_share: 0.40, equities: 0.85, real: 0.15, loss_tolerance: 0.08}
+    dynamic:  {safe_share: 0.25, equities: 0.90, real: 0.10, loss_tolerance: 0.12}
+  typical_safe_share: 0.40   # typical advice (A) = the classic 60/40 for everybody: 60% growth (shares and real
+                             # assets, with the balanced split), 40% bonds
   default_profile: balanced
   loss_confidence: 0.95      # "bad year" = 1 year in 20 (Gaussian, LN6)
   reserve_months: 0          # cash kept aside before investing, in months of gross salary. 0: the app asks for the

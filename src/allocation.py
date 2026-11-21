@@ -32,7 +32,11 @@ Strategies compared in the app and the backtest:
   (A) typical advice: the profile's safe share applied to the savings; it knows neither the job nor
       the stake
   (B) 100 minus age: age% in bonds, the rest in the growth assets
+  (M) fewer bonds only: our plan without leaving out the client's industry (points 2-4). It splits
+      the gain of (C) over (A) in two: (M) vs (A) is "your job is a bond", (C) vs (M) is "do not bet
+      twice on your industry"
   (C) our plan: the four points above
+Typical advice (A) is the classic 60/40 (allocation typical_safe_share), whatever the profile.
 No Streamlit here.
 """
 import copy
@@ -47,7 +51,7 @@ from src.config import load_params
 
 MONTHS = 12
 CASH = "CASH"
-STRATEGIES = {"A": "Typical advice", "B": "100 minus age", "C": "Our plan"}
+STRATEGIES = {"A": "Typical advice", "B": "100 minus age", "M": "Fewer bonds only", "C": "Our plan"}
 
 
 # =============================================================================
@@ -276,12 +280,13 @@ def budgets(params, mu, cov, groups_used, exclude=()):
 
 
 def safe_share(params, kind, sheet):
-    """Share of the savings in bonds: (A) the profile's safe share; (B) age%; (C) the profile's safe
-    share x (1 - bond-like share of wealth)."""
+    """Share of the savings in bonds: (A) the typical 60/40, 40% (or the profile's safe share if
+    typical_safe_share is not set); (B) age%; (C) and (M) the profile's safe share x (1 - bond-like
+    share of wealth)."""
     client = params["client"]
     profile = params["allocation"]["profiles"][client["profile"]]
     if kind == "A":
-        return profile["safe_share"]
+        return float(params["allocation"].get("typical_safe_share", profile["safe_share"]))
     if kind == "B":
         return min(max(client["age"] / 100, 0.0), 1.0)
     return float(profile["safe_share"] * min(max(1 - sheet["bond_like"], 0.0), 1.0))
@@ -315,7 +320,7 @@ def plan(params, mu, cov, kind="C", stake_value=None, months_from_now=0.0, sheet
         fixed[industry] = stake
     idio = (stake / F * alloc["stake_idio_vol"]) ** 2 if locked else 0.0
 
-    if kind not in ("A", "B", "C"):
+    if kind not in ("A", "B", "C", "M"):
         raise ValueError(f"unknown strategy {kind}")
     exclude = [industry] if kind == "C" and industry and (client["variable_pay"] > 0 or client["stake_chf"] > 0) else []
     d = safe_share(params, kind, sheet)
@@ -331,7 +336,7 @@ def plan(params, mu, cov, kind="C", stake_value=None, months_from_now=0.0, sheet
     info = {"budgets": b, "reserve": reserve, "stake": stake, "locked": locked, "idio_var": idio,
             "bond_like": sheet["bond_like"], "safe_share": d, "excluded": exclude, "cash_from_loss_limit": 0.0}
 
-    if kind == "C":                                            # loss limit before retirement
+    if kind in ("C", "M"):                                     # loss limit before retirement
         z = norm.ppf(alloc["loss_confidence"])
         tolerance = alloc["profiles"][client["profile"]]["loss_tolerance"]
         left = future_savings(params) if savings_left is None else savings_left
@@ -401,7 +406,7 @@ def analyze(params, data=None):
     client = params["client"]
     F = float(client["portfolio_chf"])
     out = {"params": params, "mu": mu, "cov": cov, "estimates": info, "sheet": sheet, "plans": {}, "months": len(excess)}
-    for kind in ("A", "B", "C"):
+    for kind in ("A", "B", "M", "C"):
         w, detail = plan(params, mu, cov, kind, sheet=sheet)
         x = w.drop(CASH)
         idio = detail["idio_var"]
@@ -536,4 +541,18 @@ def backtest_summary(params, data=None):
             "gains": B.gain_table(run, pairs), "metrics": B.metrics_table(run).rename(
                 columns={B.STRATEGIES[k]: STRATEGIES[k] for k in run["results"]}),
             "crises": B.crisis_table(run), "gamma": run["gamma"],
+            "savings": float(run["path"]["savings"].sum()), "start_age": float(run["path"]["age"].iloc[0])}
+
+
+def backtest_story(params, data=None):
+    """The backtest as the page of app_v3 tells it: (A) typical 60/40, (M) fewer bonds only, (C) our plan,
+    and (B) 100 minus age for the details. The gain of (C) over (A) is split in two steps that add up:
+    (M) vs (A) "your job is a bond" and (C) vs (M) "no second bet on your industry"."""
+    from src import backtest as B
+    run = backtest(params, data, strategies=("A", "B", "M", "C"))
+    pairs = (("M", "A"), ("C", "M"), ("C", "A"), ("B", "A"))
+    metrics = B.metrics_table(run)
+    metrics.columns = [next(k for k in run["results"] if B.STRATEGIES[k] == c) for c in metrics.columns]
+    return {"values": pd.DataFrame({k: r["value"] for k, r in run["results"].items()}),
+            "gains": B.gain_table(run, pairs), "metrics": metrics, "crises": B.crisis_table(run),
             "savings": float(run["path"]["savings"].sum()), "start_age": float(run["path"]["age"].iloc[0])}
