@@ -34,6 +34,7 @@ SNB_URL = "https://data.snb.ch/api/cube/{cube}/data/csv/en"
 
 RETURNS_FILE = "returns_chf.csv"
 SECTORS_FILE = "sectors_chf.csv"
+UNIVERSE2_FILE = "universe2_chf.csv"   # version 2: 12 industries, corporate bonds, commodities
 
 RF_FILE = "rf_chf.csv"
 COVERAGE_FILE = "coverage.csv"
@@ -229,6 +230,15 @@ def clean_ticker_returns(returns, limit):
     return returns.mask(bad), removed
 
 
+def _hedge_carry(params, source, index, rf_level):
+    """1-month currency hedge of a foreign asset: (CHF rate - foreign rate) / 12, both rates known at
+    the start of the month. Negative when CHF rates are lower. Added to the local return."""
+    foreign = _to_monthly_last(_as_series(_cached(params, "fred_" + source["foreign_rf"],
+                                                  lambda: download_fred(source["foreign_rf"]))))
+    carry = (rf_level.reindex(index) - foreign.reindex(index)) / 100.0 / 12.0
+    return carry.shift(1)
+
+
 def source_returns(params, source, fx, rf_level):
     """Monthly returns in CHF of one source described in params.yaml.
     Returns (series, list of removed data errors)."""
@@ -243,6 +253,8 @@ def source_returns(params, source, fx, rf_level):
         ticker_returns = prices.pct_change(fill_method=None)       # NaN when a price is missing
         ticker_returns, removed = clean_ticker_returns(ticker_returns, params["data"]["max_abs_monthly_return_ticker"])
         local = ticker_returns.mean(axis=1, skipna=True)            # equal weight of the tickers available that month
+        if source.get("hedged", False):
+            return local + _hedge_carry(params, source, local.index, rf_level), removed
         return to_chf(local, source["currency"], fx), removed
 
     if kind == "kf_market":
@@ -264,12 +276,7 @@ def source_returns(params, source, fx, rf_level):
                                                     lambda: download_fred(source["series"]))))
         local = synthetic_bond_returns(level, source["duration"])
         if source.get("hedged", False):
-            # 1-month currency hedge: local return + (CHF rate - foreign rate) / 12,
-            # both rates known at the start of the month. Negative when CHF rates are lower.
-            foreign = _to_monthly_last(_as_series(_cached(params, "fred_" + source["foreign_rf"],
-                                                          lambda: download_fred(source["foreign_rf"]))))
-            carry = (rf_level.reindex(local.index) - foreign.reindex(local.index)) / 100.0 / 12.0
-            return local + carry.shift(1), []
+            return local + _hedge_carry(params, source, local.index, rf_level), []
         return to_chf(local, source["currency"], fx), []
 
     raise ValueError(f"Unknown source type: {kind}")
@@ -319,7 +326,8 @@ def build_data(params=None, verbose=True):
     fx = build_fx(params)
     rf, rf_level = build_rf(params)
 
-    specs = {**params["data"]["assets"], **params["data"].get("sectors", {})}   # core universe + sector menu
+    specs = {**params["data"]["assets"], **params["data"].get("sectors", {}),      # core universe + sector menu
+             **params["data"].get("universe2", {})}                               # + version 2 universe
     columns, used_by_asset, removed_all = {}, {}, []
     for asset, spec in specs.items():
         pieces = []
@@ -401,13 +409,16 @@ def update_data(params=None, verbose=True):
     returns, rf, coverage = build_data(params, verbose)
     core = [a for a in params["data"]["assets"] if a in returns.columns]
     sectors = [a for a in params["data"].get("sectors", {}) if a in returns.columns]
+    universe2 = [a for a in params["data"].get("universe2", {}) if a in returns.columns]
     folder = _data_folder(params)
     returns[core].to_csv(os.path.join(folder, RETURNS_FILE))
     returns[sectors].to_csv(os.path.join(folder, SECTORS_FILE))
+    if universe2:
+        returns[universe2].to_csv(os.path.join(folder, UNIVERSE2_FILE))
     rf.to_frame().to_csv(os.path.join(folder, RF_FILE))
     coverage.to_csv(os.path.join(folder, COVERAGE_FILE), index=False)
     if verbose:
-        print(f"\nSaved {RETURNS_FILE}, {SECTORS_FILE}, {RF_FILE} and {COVERAGE_FILE} in {folder}")
+        print(f"\nSaved {RETURNS_FILE}, {SECTORS_FILE}, {UNIVERSE2_FILE}, {RF_FILE} and {COVERAGE_FILE} in {folder}")
     return returns[core], rf
 
 
@@ -435,6 +446,14 @@ def load_sector_returns(start=None, end=None, params=None):
     if params is None:
         params = load_params()
     return _read_saved(params, SECTORS_FILE).loc[start:end]
+
+
+def load_universe2_returns(start=None, end=None, params=None):
+    """Version 2 universe: monthly CHF returns of the 12 Fama-French industries (IND_...), corporate
+    bonds (BOND_CORP) and commodities (COMMOD), same index as load_returns."""
+    if params is None:
+        params = load_params()
+    return _read_saved(params, UNIVERSE2_FILE).loc[start:end]
 
 
 def load_rf(start=None, end=None, params=None):

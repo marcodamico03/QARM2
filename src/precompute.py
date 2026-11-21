@@ -5,8 +5,8 @@ the first time the client is shown (a few seconds), and keeps it in data/cache/.
 does it in advance for every persona with its default settings.
 
 Run from the project folder:
-    python -m src.precompute                 backtest and prior check of every persona (about 1 minute)
-    python -m src.precompute --robustness    also the robustness tests (about 5 minutes)
+    python -m src.precompute                 backtest of every example client (about 1 minute)
+    python -m src.precompute --robustness    also the version 1 backtests and robustness tests (about 5 minutes)
 """
 import sys
 import time
@@ -19,13 +19,15 @@ from src.config import load_params
 def main(robustness=False):
     base = load_params()
     data = B.load_backtest_data()
-    names = ["backtest", "prior"] + (["robustness"] if robustness else [])
+    from src import allocation as A
+    data2 = A.load_data(base)
+    names = ["backtest2"] + (["backtest", "prior", "robustness"] if robustness else [])
     for persona in base["personas"]:
-        params = D.client_params(persona, None, base)
         for name in names:
+            params = A.client_params(persona, None, base) if name == "backtest2" else D.client_params(persona, None, base)
             start = time.time()
             was_saved = D.saved(name, params) is not None
-            D.remember(name, params, data)
+            D.remember(name, params, data2 if name == "backtest2" else data)
             print(f"{persona:18s} {name:11s} {'already saved' if was_saved else 'computed'}"
                   f"  {time.time() - start:5.1f} s")
     print(f"Saved in {D.CACHE_DIR}")

@@ -9,8 +9,10 @@ import os
 import sys
 
 import numpy as np
+import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import src.allocation as AL
 import src.backtest as B
 import src.dashboard as D
 import src.optimizer as O
@@ -114,12 +116,53 @@ def test_saved_results():
     print("saved results and background jobs OK")
 
 
+def test_allocation():
+    base = load_params()
+    data = AL.load_data(base)
+    excess = data[0].sub(data[1], axis=0)
+    p = AL.client_params("banker", None, base)
+    mu, cov, _ = AL.estimates(excess, p)
+    # risk budgeting with a fixed holding: amounts add up, and y_i (Sigma e)_i is proportional to the budgets
+    names = list(cov.columns)
+    b = AL.budgets(p, mu, cov, ["equities", "real"], exclude=["IND_MONEY"])
+    fixed = pd.Series(0.0, index=names)
+    fixed["IND_MONEY"] = 15_000.0
+    y = AL.risk_budget_amounts(cov, b, fixed, 85_000.0)
+    assert abs(y.sum() - 85_000) < 1e-6 and y["IND_MONEY"] == 0 and (y[b > 0] > 0).all()
+    rc = y * (cov.to_numpy() @ (y + fixed).to_numpy())
+    ratio = (rc[b > 0] / b[b > 0])
+    assert ratio.max() / ratio.min() - 1 < 1e-4
+    # plans: weights add up to 1, no short; our plan leaves out the own industry except the stake
+    r = AL.analyze(p, data)
+    for kind, plan in r["plans"].items():
+        w = plan["weights"]
+        assert abs(w.sum() - 1) < 1e-9 and (w >= 0).all(), kind
+        assert abs(plan["risk_parts"].sum() - 1) < 1e-9, kind
+    wC = r["plans"]["C"]["weights"]
+    assert abs(wC["IND_MONEY"] - 15_000 / 100_000) < 1e-9
+    # a young client with a career holds fewer bonds than typical advice, never 100% in one asset
+    assert r["plans"]["C"]["groups"]["bonds"] < r["plans"]["A"]["groups"]["bonds"]
+    assert wC.drop(["IND_MONEY", "CASH"]).max() < 0.2
+    # the plan by age: more bonds near retirement
+    g = AL.glide_path(p, mu, cov)
+    assert g[("C", "bonds")].iloc[-1] > g[("C", "bonds")].iloc[0]
+    # near retirement with large savings the loss limit moves part to cash
+    old = AL.client_params("banker", {"age": 64, "portfolio_chf": 2_100_000, "stake_chf": 0, "profile": "prudent"}, base)
+    r = AL.analyze(old, data)
+    assert r["plans"]["C"]["detail"]["cash_from_loss_limit"] > 0
+    # civil servant: no industry left out, no stake
+    r = AL.analyze(AL.client_params("civil_servant", None, base), data)
+    assert r["plans"]["C"]["detail"]["excluded"] == [] and not r["plans"]["C"]["detail"]["locked"]
+    print("allocation (version 2) OK")
+
+
 def test_theme():
     assert T.chf(3_289_732) == "CHF 3.29 m" and T.chf(493_460) == "CHF 493k" and T.chf(1250) == "CHF 1'250"
     assert T.chf(-2500, short=False) == "−CHF 2'500" and T.pct(0.0291, 1) == "2.9%"
     assert "\n\n" not in T.css()                       # a blank line would end the HTML block in Markdown
     sheet = {"H": 3e6, "P": 5e4, "F": 1e5, "W": 3.15e6}
     bar = T.wealth(sheet)
+    assert T.asset_color("STAKE") == T.SECTOR and T.asset_name("STAKE") == "Your employer shares"
     assert bar.count("flex:") == 3 and "CHF 3.00 m" in bar and "CHF 3.15 m" in bar
     assert "Typical" in T.bar_row("Typical", {"EQ_WORLD": 0.6, "BOND_CHF": 0.4}, labels=False)
     print("theme OK")
@@ -132,18 +175,19 @@ def test_app_headless():
         print("streamlit not installed, app test skipped")
         return
     base = load_params()
-    for name in base["personas"]:                             # saved first: the pages then never wait
-        for kind in ("backtest", "prior"):
-            D.remember(kind, D.client_params(name, None, base))
-    at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=180).run()
+    for name in base["personas"]:                             # saved first: the page then never waits
+        D.remember("backtest2", AL.client_params(name, None, base))
+    at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=240).run()
     assert not at.exception, at.exception
-    for name in base["personas"]:                             # every job of the menu
+    for name in base["personas"]:                             # every example client
         at.selectbox(key="job").set_value(name).run()
         assert not at.exception, (name, at.exception)
     at.selectbox(key="job").set_value("banker").run()
-    at.number_input(key="age_banker").set_value(58).run()
+    at.number_input(key="age_banker").set_value(62).run()
+    at.number_input(key="savings_banker").set_value(2_000_000).run()
     assert not at.exception, at.exception
-    at.toggle(key="lev_banker").set_value(False).run()       # rules off: the page still works
+    at.selectbox(key="industry_banker").set_value(None).run()
+    at.toggle(key="self_banker").set_value(True).run()
     assert not at.exception, at.exception
     print("the app runs for every persona and other settings, OK")
 
@@ -153,6 +197,7 @@ if __name__ == "__main__":
     test_analysis_and_lifecycle()
     test_plan_numbers()
     test_saved_results()
+    test_allocation()
     test_theme()
     test_app_headless()
     print("ALL TESTS PASSED")

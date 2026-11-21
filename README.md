@@ -21,7 +21,8 @@ streamlit run app.py
 | Path | What it contains |
 |---|---|
 | `app.py` | The Streamlit app, one page (see `docs/app.md`) |
-| `src/dashboard.py`, `src/theme.py` | Numbers and look of the app |
+| `src/allocation.py` | Version 2 of the advice: risk budgeting around the client's job (see `docs/app.md`) |
+| `src/dashboard.py`, `src/theme.py` | Saved results and look of the app |
 | `src/jobs.py` | Backtests run in the background, so the app never freezes |
 | `src/precompute.py` | Optional: the backtests of every persona computed in advance |
 | `pages/` | Not used: the app is one page |

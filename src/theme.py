@@ -33,16 +33,28 @@ GOOD = "#4FC08D"
 ASSET_COLORS = {
     "EQ_WORLD": SAVINGS, "EQ_CH": "#E59A5C", "BANKS_EU": SECTOR, "BOND_CHF": BONDS,
     "BOND_GLB_H": "#9CC3E8", "REIT_CH": PENSION, "GOLD": "#BFA15A", "EMPLOYER": "#A9876A",
-    "CASH": FAINT,
+    "CASH": FAINT, "BOND_CORP": "#4F7FB0", "COMMOD": "#8FBF9F",
 }
-GROUP_COLORS = {"Shares": SAVINGS, "Bonds": BONDS, "Real estate and gold": PENSION, "Cash": FAINT}
+# version 2: the 12 industries in shades of champagne, the client's own stake in rose
+INDUSTRY_COLORS = ["#F2D49B", "#E9C27F", "#DDB066", "#D19E52", "#C48D43", "#B67D38",
+                   "#EBC98C", "#DFB873", "#D3A65E", "#C6954C", "#B8853E", "#A97634"]
+for _i, _name in enumerate(["IND_NODUR", "IND_DURBL", "IND_MANUF", "IND_ENRGY", "IND_CHEMS", "IND_BUSEQ",
+                            "IND_TELCM", "IND_UTILS", "IND_SHOPS", "IND_HLTH", "IND_MONEY", "IND_OTHER"]):
+    ASSET_COLORS[_name] = INDUSTRY_COLORS[_i]
+GROUP_COLORS = {"Shares": SAVINGS, "Bonds": BONDS, "Real estate and gold": PENSION, "Cash": FAINT,
+                "equities": SAVINGS, "real": PENSION, "bonds": BONDS, "cash": FAINT}
+GROUP_NAMES = {"equities": "Shares", "real": "Real assets", "bonds": "Bonds", "cash": "Cash"}
 STRATEGY_COLORS = {"A": TYPICAL, "B": "#A3AEC2", "D": "#E59A5C", "C": SAVINGS}
 
 SHORT_NAMES = {
     "EQ_WORLD": "World equities", "EQ_CH": "Swiss equities", "BANKS_EU": "European banks",
     "BOND_CHF": "Swiss gov. bonds", "BOND_GLB_H": "Global bonds, hedged", "REIT_CH": "Swiss real estate",
     "GOLD": "Gold", "EMPLOYER": "Employer shares", "CASH": "Cash", "CAREER": "Your career",
-    "PENSION": "Your pension",
+    "PENSION": "Your pension", "BOND_CORP": "Corporate bonds", "COMMOD": "Commodities",
+    "IND_NODUR": "Food and household", "IND_DURBL": "Cars and appliances", "IND_MANUF": "Manufacturing",
+    "IND_ENRGY": "Energy", "IND_CHEMS": "Chemicals", "IND_BUSEQ": "Technology", "IND_TELCM": "Telecom",
+    "IND_UTILS": "Utilities", "IND_SHOPS": "Retail", "IND_HLTH": "Health care", "IND_MONEY": "Finance",
+    "IND_OTHER": "Construction and other", "STAKE": "Your employer shares",
 }
 
 FONTS = "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"
@@ -59,6 +71,8 @@ def asset_name(asset, params=None):
 
 
 def asset_color(asset):
+    if asset == "STAKE":
+        return SECTOR
     return ASSET_COLORS.get(asset, SECTOR if str(asset).startswith("SEC_") else TYPICAL)
 
 
@@ -109,7 +123,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .block-container {{ padding: 1.4rem 2rem 3rem; max-width: 1500px; }}
 .stApp .num, .btp-table td {{ font-variant-numeric: tabular-nums; }}
 /* side panel: the client */
-[data-testid="stSidebar"] {{ background: #111318; border-right: 1px solid var(--line); }}
+[data-testid="stSidebar"] {{ background: #111318; border-right: 1px solid var(--line); min-width: 340px; }}
 [data-testid="stSidebar"] .block-container, [data-testid="stSidebarUserContent"] {{ padding-top: 1.2rem; }}
 [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color: var(--muted); font-size: .82rem; }}
 [data-testid="stSidebar"] [data-testid="stExpander"] {{ border: 1px solid var(--line); border-radius: 14px;

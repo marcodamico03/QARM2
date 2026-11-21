@@ -263,14 +263,27 @@ def saved(name, params):
         return None
 
 
-COMPUTE = {"backtest": backtest, "prior": prior_check, "robustness": robustness}
+def _backtest2(params, data=None):
+    from src import allocation as A
+    return A.backtest_summary(params, data)
+
+
+def _load2():
+    from src import allocation as A
+    return A.load_data()
+
+
+COMPUTE = {"backtest": backtest, "prior": prior_check, "robustness": robustness, "backtest2": _backtest2}
+LOADERS = {"backtest2": _load2}
 
 
 def remember(name, params, data=None):
     """Saved result of COMPUTE[name] for this client; computed and saved the first time."""
     result = saved(name, params)
     if result is None:
-        result = COMPUTE[name](params, data if data is not None else B.load_backtest_data())
+        if data is None:
+            data = LOADERS.get(name, B.load_backtest_data)()
+        result = COMPUTE[name](params, data)
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         path = CACHE_DIR / (cache_key(name, params) + ".pkl")
         tmp = path.with_suffix(f".{os.getpid()}.tmp")
