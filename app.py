@@ -136,9 +136,8 @@ with st.sidebar:
                               APP["savings_step"], key="savings" + k)
     pension = None
     if p.get("pillar2", True):
-        how = choice("Pension fund (2nd pillar)", ["Estimate it", "From my certificate"], "Estimate it",
-                     "pension_how" + k)
-        if how == "From my certificate":
+        how = choice("Pension fund (2nd pillar)", ["Estimate", "My certificate"], "Estimate", "pension_how" + k)
+        if how == "My certificate":
             estimate = O.pension_savings(age, salary, D.client_params(persona, None, P0))
             pension = st.number_input("Savings on the certificate, CHF", 0, APP["pension_max"],
                                       int(round(estimate, -3)), APP["pension_step"], key="pension" + k)

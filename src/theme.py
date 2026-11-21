@@ -119,7 +119,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
         gap: .6rem; margin: 0 0 1.3rem; }}
 .btp-brand i {{ display: inline-block; width: 22px; height: 22px; border-radius: 50%;
         background: conic-gradient(var(--career) 0 70%, var(--pension) 70% 84%, var(--savings) 84% 100%); }}
-.btp-side-note {{ color: var(--faint); font-size: .78rem; line-height: 1.45; margin: 1rem 0 0; }}
+.stApp .btp-side-note {{ color: var(--faint); font-size: .78rem; line-height: 1.45; margin: 1rem 0 0; }}
 /* header */
 .btp-who {{ color: var(--muted); font-size: .92rem; margin: 0 0 .35rem; display: flex; gap: 14px;
         align-items: center; flex-wrap: wrap; }}
@@ -130,7 +130,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-headline {{ font-weight: 700; font-size: clamp(1.5rem, 2.3vw, 2.15rem); line-height: 1.15;
         letter-spacing: -0.025em; margin: 0 0 .35rem; max-width: 46ch; }}
 .btp-headline em {{ font-style: normal; color: var(--savings); }}
-.btp-lede {{ color: var(--muted); font-size: 1rem; line-height: 1.5; margin: 0 0 1.1rem; max-width: 92ch; }}
+.stApp .btp-lede {{ color: var(--muted); font-size: 1rem; line-height: 1.5; margin: 0 0 1.1rem; max-width: 92ch; }}
 .btp-lede b {{ color: var(--text); font-weight: 600; }}
 /* wealth bar */
 .btp-wealth {{ display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; margin: 0 0 1.1rem; }}
@@ -144,11 +144,11 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; }}
 /* panels: bordered containers with a key starting with "panel" */
 [class*="st-key-panel"] {{ background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
-        padding: 18px 20px 12px; }}
+        padding: 18px 20px 22px; }}
 .btp-panel-title {{ display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0 0 2px; }}
 .btp-panel-title b {{ font-weight: 700; font-size: 1.02rem; }}
 .btp-panel-title span {{ color: var(--muted); font-size: .82rem; }}
-.btp-panel-note {{ color: var(--muted); font-size: .86rem; line-height: 1.45; margin: 4px 0 0; }}
+.stApp .btp-panel-note {{ color: var(--muted); font-size: .86rem; line-height: 1.45; margin: 4px 0 0; }}
 .btp-panel-note b {{ color: var(--text); font-weight: 600; }}
 [data-testid="stPlotlyChart"] {{ background: transparent; }}
 /* allocation bars */
@@ -167,7 +167,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-hold b {{ font-weight: 600; font-variant-numeric: tabular-nums; }}
 .btp-hold small {{ color: var(--muted); margin-left: 6px; }}
 .btp-why {{ margin: 12px 0 2px; display: grid; gap: 8px; }}
-.btp-why > div {{ display: grid; grid-template-columns: 3px 1fr; gap: 12px; font-size: .88rem; line-height: 1.45;
+.stApp .btp-why > div {{ display: grid; grid-template-columns: 3px 1fr; gap: 12px; font-size: .88rem; line-height: 1.45;
         color: var(--muted); }}
 .btp-why > div > i {{ border-radius: 3px; }}
 .btp-why b {{ color: var(--text); font-weight: 600; }}
@@ -176,7 +176,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-stat b {{ display: block; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.015em;
         font-variant-numeric: tabular-nums; white-space: nowrap; }}
 .btp-stat span {{ color: var(--muted); font-size: .8rem; line-height: 1.35; display: block; }}
-.btp-wait {{ padding: 46px 6px; color: var(--muted); font-size: .9rem; }}
+.stApp .btp-wait {{ padding: 46px 6px; color: var(--muted); font-size: .9rem; }}
 .btp-wait .track {{ height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 12px 0 0;
         max-width: 360px; }}
 .btp-wait .track i {{ display: block; height: 100%; width: 35%; border-radius: 999px; background: var(--savings); }}
@@ -189,21 +189,23 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .stTabs .react-aria-SelectionIndicator {{ background: var(--savings) !important; }}
 .stTabs [data-baseweb="tab-highlight"] {{ background: var(--savings); }}
 .btp-h3 {{ font-weight: 700; font-size: 1.05rem; margin: 1.3rem 0 .2rem; }}
-.btp-p {{ color: var(--muted); font-size: .92rem; line-height: 1.55; margin: 0 0 .9rem; max-width: 90ch; }}
+.stApp .btp-p {{ color: var(--muted); font-size: .92rem; line-height: 1.55; margin: 0 0 .9rem; max-width: 90ch; }}
 .btp-p b {{ color: var(--text); font-weight: 600; }}
 .btp-cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: .6rem 0 0; }}
 .btp-card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }}
 .btp-card b.v {{ display: block; font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap;
         font-variant-numeric: tabular-nums; }}
 .btp-card p {{ color: var(--muted); font-size: .86rem; line-height: 1.45; margin: .35rem 0 0; }}
-.btp-table {{ width: 100%; border-collapse: collapse; font-size: .88rem; margin: .4rem 0 0; }}
-.btp-table th {{ text-align: right; font-weight: 600; color: var(--muted); padding: 9px 12px;
+.stApp .btp-table {{ width: 100%; border-collapse: collapse; font-size: .88rem; margin: .4rem 0 0; border: none; }}
+.stApp .btp-table th, .stApp .btp-table td {{ border: none; }}
+.stApp .btp-table th {{ text-align: right; font-weight: 600; color: var(--muted); padding: 9px 12px;
         border-bottom: 1px solid var(--line); }}
-.btp-table td {{ text-align: right; padding: 8px 12px; border-bottom: 1px solid #1D2129; }}
-.btp-table th.txt, .btp-table td.txt {{ text-align: left; }}
+.stApp .btp-table td {{ text-align: right; padding: 8px 12px; border-bottom: 1px solid #1D2129; }}
+.stApp .btp-table th.txt, .stApp .btp-table td.txt {{ text-align: left; }}
+.stApp .btp-table td:first-child, .stApp .btp-table td:not(.txt) {{ white-space: nowrap; }}
 .btp-pos {{ color: var(--good); font-weight: 600; }}
 .btp-neg {{ color: var(--sector); font-weight: 600; }}
-.btp-foot {{ color: var(--faint); font-size: .78rem; margin: 2.4rem 0 0; line-height: 1.5; }}
+.stApp .btp-foot {{ color: var(--faint); font-size: .78rem; margin: 2.4rem 0 0; line-height: 1.5; }}
 @media (max-width: 900px) {{
   .block-container {{ padding: 1rem 1rem 3rem; }}
   .btp-wealth {{ grid-template-columns: 1fr; }} .btp-total {{ text-align: left; }}
