@@ -6,7 +6,7 @@ toolbarMode = "minimal"        # no "Deploy" button and no developer menu: the a
 [server]
 runOnSave = true               # the app reloads by itself when a file is saved
 
-[theme]                        # dark, the same colours as src/theme.py
+[theme]                        # dark at start, the same colours as src/theme.py; the switch "Light" changes it
 base = "dark"
 primaryColor = "#D9B46C"
 backgroundColor = "#0E1014"

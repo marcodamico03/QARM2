@@ -12,39 +12,59 @@ import html
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# Palette
+# Palettes: dark (default) and light, same meaning for every colour. use(mode) switches them.
 # ---------------------------------------------------------------------------
-BG = "#0E1014"           # page
-PANEL = "#15181E"        # panels
-RAISED = "#1C2028"       # inputs, hover
-LINE = "#262B35"         # borders and grid
-TEXT = "#ECEEF2"
-MUTED = "#8B92A1"
-FAINT = "#5A6170"
-
-CAREER = "#8E9BFF"       # the career (human capital)
-PENSION = "#5CC2A7"      # the pension
-SAVINGS = "#D9B46C"      # the portfolio, and our advice
-TYPICAL = "#6B7385"      # typical advice
-BONDS = "#6FA8DC"
-SECTOR = "#E46F7F"       # the client's own sector, losses
-GOOD = "#4FC08D"
-
-ASSET_COLORS = {
-    "EQ_WORLD": SAVINGS, "EQ_CH": "#E59A5C", "BANKS_EU": SECTOR, "BOND_CHF": BONDS,
-    "BOND_GLB_H": "#9CC3E8", "REIT_CH": PENSION, "GOLD": "#BFA15A", "EMPLOYER": "#A9876A",
-    "CASH": FAINT, "BOND_CORP": "#4F7FB0", "COMMOD": "#8FBF9F",
+PALETTES = {
+    "dark": {
+        "BG": "#0E1014", "PANEL": "#15181E", "RAISED": "#1C2028", "LINE": "#262B35", "LINE2": "#1D2129",
+        "SIDE": "#111318", "TEXT": "#ECEEF2", "MUTED": "#8B92A1", "FAINT": "#5A6170",
+        "CAREER": "#8E9BFF", "PENSION": "#5CC2A7", "SAVINGS": "#D9B46C", "TYPICAL": "#6B7385",
+        "BONDS": "#6FA8DC", "SECTOR": "#E46F7F", "GOOD": "#4FC08D", "ON_BAR": "#0E1014",
+        "EQ_CH": "#E59A5C", "BOND_GLB_H": "#9CC3E8", "GOLD": "#BFA15A", "EMPLOYER": "#A9876A",
+        "BOND_CORP": "#4F7FB0", "COMMOD": "#8FBF9F", "STRATEGY_B": "#A3AEC2",
+        "INDUSTRY_COLORS": ["#F2D49B", "#E9C27F", "#DDB066", "#D19E52", "#C48D43", "#B67D38",
+                            "#EBC98C", "#DFB873", "#D3A65E", "#C6954C", "#B8853E", "#A97634"],
+    },
+    "light": {
+        "BG": "#F5F6F8", "PANEL": "#FFFFFF", "RAISED": "#ECEEF2", "LINE": "#E1E4EA", "LINE2": "#ECEEF2",
+        "SIDE": "#FBFBFC", "TEXT": "#15181E", "MUTED": "#5E6575", "FAINT": "#9AA1AE",
+        "CAREER": "#5B6CF0", "PENSION": "#2E9C80", "SAVINGS": "#B8862F", "TYPICAL": "#8A91A0",
+        "BONDS": "#3D7CC0", "SECTOR": "#D04A5F", "GOOD": "#2E9C6A", "ON_BAR": "#FFFFFF",
+        "EQ_CH": "#C9733A", "BOND_GLB_H": "#7EAEDC", "GOLD": "#A88A3E", "EMPLOYER": "#8C6A4E",
+        "BOND_CORP": "#2F5F96", "COMMOD": "#6FA884", "STRATEGY_B": "#7D879A",
+        "INDUSTRY_COLORS": ["#E3C27E", "#D8AF66", "#CC9C52", "#BF8A42", "#B17A36", "#A36C2D",
+                            "#DDB874", "#D1A55E", "#C4934B", "#B7823E", "#A97333", "#9A652A"],
+    },
 }
-# version 2: the 12 industries in shades of champagne, the client's own stake in rose
-INDUSTRY_COLORS = ["#F2D49B", "#E9C27F", "#DDB066", "#D19E52", "#C48D43", "#B67D38",
-                   "#EBC98C", "#DFB873", "#D3A65E", "#C6954C", "#B8853E", "#A97634"]
-for _i, _name in enumerate(["IND_NODUR", "IND_DURBL", "IND_MANUF", "IND_ENRGY", "IND_CHEMS", "IND_BUSEQ",
-                            "IND_TELCM", "IND_UTILS", "IND_SHOPS", "IND_HLTH", "IND_MONEY", "IND_OTHER"]):
-    ASSET_COLORS[_name] = INDUSTRY_COLORS[_i]
-GROUP_COLORS = {"Shares": SAVINGS, "Bonds": BONDS, "Real estate and gold": PENSION, "Cash": FAINT,
-                "equities": SAVINGS, "real": PENSION, "bonds": BONDS, "cash": FAINT}
+INDUSTRIES = ["IND_NODUR", "IND_DURBL", "IND_MANUF", "IND_ENRGY", "IND_CHEMS", "IND_BUSEQ",
+              "IND_TELCM", "IND_UTILS", "IND_SHOPS", "IND_HLTH", "IND_MONEY", "IND_OTHER"]
 GROUP_NAMES = {"equities": "Shares", "real": "Real assets", "bonds": "Bonds", "cash": "Cash"}
-STRATEGY_COLORS = {"A": TYPICAL, "B": "#A3AEC2", "D": "#E59A5C", "C": SAVINGS}
+MODE = "dark"
+
+
+def use(mode="dark"):
+    """Switch every colour of the module to the dark or light palette (call it first in each run)."""
+    global MODE, ASSET_COLORS, GROUP_COLORS, STRATEGY_COLORS
+    MODE = mode
+    p = PALETTES[mode]
+    globals().update({k: v for k, v in p.items()})
+    ASSET_COLORS = {"EQ_WORLD": p["SAVINGS"], "EQ_CH": p["EQ_CH"], "BANKS_EU": p["SECTOR"], "BOND_CHF": p["BONDS"],
+                    "BOND_GLB_H": p["BOND_GLB_H"], "REIT_CH": p["PENSION"], "GOLD": p["GOLD"],
+                    "EMPLOYER": p["EMPLOYER"], "CASH": p["FAINT"], "BOND_CORP": p["BOND_CORP"], "COMMOD": p["COMMOD"]}
+    ASSET_COLORS.update(dict(zip(INDUSTRIES, p["INDUSTRY_COLORS"])))
+    GROUP_COLORS = {"Shares": p["SAVINGS"], "Bonds": p["BONDS"], "Real estate and gold": p["PENSION"],
+                    "Cash": p["FAINT"], "equities": p["SAVINGS"], "real": p["PENSION"], "bonds": p["BONDS"],
+                    "cash": p["FAINT"]}
+    STRATEGY_COLORS = {"A": p["TYPICAL"], "B": p["STRATEGY_B"], "D": p["EQ_CH"], "C": p["SAVINGS"]}
+
+
+def streamlit_theme():
+    """Options of Streamlit's own theme (widgets) for the current palette."""
+    return {"base": MODE, "primaryColor": SAVINGS, "backgroundColor": BG, "secondaryBackgroundColor": RAISED,
+            "textColor": TEXT}
+
+
+use("dark")
 
 SHORT_NAMES = {
     "EQ_WORLD": "World equities", "EQ_CH": "Swiss equities", "BANKS_EU": "European banks",
@@ -123,7 +143,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .block-container {{ padding: 1.4rem 2rem 3rem; max-width: 1500px; }}
 .stApp .num, .btp-table td {{ font-variant-numeric: tabular-nums; }}
 /* side panel: the client */
-[data-testid="stSidebar"] {{ background: #111318; border-right: 1px solid var(--line); min-width: 340px; }}
+[data-testid="stSidebar"] {{ background: {SIDE}; border-right: 1px solid var(--line); }}
 [data-testid="stSidebar"] .block-container, [data-testid="stSidebarUserContent"] {{ padding-top: 1.2rem; }}
 [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color: var(--muted); font-size: .82rem; }}
 [data-testid="stSidebar"] [data-testid="stExpander"] {{ border: 1px solid var(--line); border-radius: 14px;
@@ -135,6 +155,8 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
         background: conic-gradient(var(--career) 0 70%, var(--pension) 70% 84%, var(--savings) 84% 100%); }}
 .stApp .btp-side-note {{ color: var(--faint); font-size: .78rem; line-height: 1.45; margin: 1rem 0 0; }}
 /* header */
+.stApp .st-key-theme_switch {{ display: flex; justify-content: flex-end; }}
+.stApp .st-key-theme_switch label p {{ color: var(--muted); font-size: .85rem; }}
 .btp-who {{ color: var(--muted); font-size: .92rem; margin: 0 0 .35rem; display: flex; gap: 14px;
         align-items: center; flex-wrap: wrap; }}
 .btp-status {{ display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px;
@@ -173,7 +195,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-bar {{ display: flex; height: 30px; border-radius: 9px; overflow: hidden; gap: 2px; }}
 .btp-barrow.typical .btp-bar {{ height: 16px; border-radius: 6px; opacity: .85; }}
 .btp-bar > div {{ display: flex; align-items: center; padding: 0 10px; font-size: .78rem; font-weight: 600;
-        color: {BG}; white-space: nowrap; overflow: hidden; min-width: 0; }}
+        color: {ON_BAR}; white-space: nowrap; overflow: hidden; min-width: 0; }}
 .btp-hold {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0 22px;
         margin: 8px 0 0; }}
 .btp-hold > div {{ display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 7px 0;
@@ -214,7 +236,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .stApp .btp-table th, .stApp .btp-table td {{ border: none; }}
 .stApp .btp-table th {{ text-align: right; font-weight: 600; color: var(--muted); padding: 9px 12px;
         border-bottom: 1px solid var(--line); }}
-.stApp .btp-table td {{ text-align: right; padding: 8px 12px; border-bottom: 1px solid #1D2129; }}
+.stApp .btp-table td {{ text-align: right; padding: 8px 12px; border-bottom: 1px solid {LINE2}; }}
 .stApp .btp-table th.txt, .stApp .btp-table td.txt {{ text-align: left; }}
 .stApp .btp-table td:first-child, .stApp .btp-table td:not(.txt) {{ white-space: nowrap; }}
 .btp-pos {{ color: var(--good); font-weight: 600; }}

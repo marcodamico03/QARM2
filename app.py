@@ -1,39 +1,54 @@
-"""Beyond the Portfolio: the Streamlit app (step 5, version 2 of the advice).
+"""Beyond the Portfolio (version 3 of the app, tags app-v1 and app-v2 keep the earlier ones): one page that tells the result as a story.
 
 Run from the project folder:
     streamlit run app.py
 
-One page. The client is in the side panel: industry, age, pay, savings, employer shares and when
-they can be sold, risk profile. The answer fits on one screen: the plan in CHF and why, the
-backtest since 2005, where the risk of the savings comes from, and the plan by age. The tabs below
-hold every detail. Everything updates by itself; the backtest runs in the background.
-The numbers come from src/allocation.py (risk budgeting, LN5-LN6) and steps 1 to 4; the look is in
-src/theme.py. The version of the app before the pivot is the git tag app-v1.
+The client is in the side panel. The page answers, top to bottom:
+    1. What to do with the savings (our plan against typical advice, the profile's model portfolio)
+    2. Why: the client is more than the savings (career, pension, savings)
+    3. The two changes from typical advice and what each was worth in the backtest
+    4. What the client gives up (more swings in the savings)
+    5. Since 2005, someone like the client
+    6. As the client gets older
+    Details (closed): every holding, the full backtest numbers, the assumptions.
+Light or dark with the switch at the top of the side panel. Same model as app.py (src/allocation.py);
+the look is in src/look.py (dark at start, the switch "Light" top right changes every colour).
 """
 import json
 
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit import config
 
 from src import allocation as A
 from src import dashboard as D
+from src import look as L
 from src import optimizer as O
-from src import theme as T
 from src.config import load_params
 from src.jobs import Jobs
 
+# =============================================================================
+# Light or dark: Streamlit's own theme follows the switch (it applies on the next run, hence the rerun)
+# =============================================================================
+DARK = not st.session_state.get("light", False)            # dark unless the switch top right is on
+C = L.palette(DARK)
+_theme = L.streamlit_theme(C)
+if any(config.get_option(f"theme.{k}") != v for k, v in _theme.items()):
+    for k, v in _theme.items():
+        config.set_option(f"theme.{k}", v)
+    st.rerun()
+
 st.set_page_config(page_title="Beyond the Portfolio", page_icon="◐", layout="wide",
                    initial_sidebar_state="expanded")
-st.markdown(T.css(), unsafe_allow_html=True)
-CHART_CONFIG = {"displayModeBar": False, "responsive": True}
-NAMES = A.STRATEGIES
-COLORS = {"A": T.TYPICAL, "B": "#A3AEC2", "C": T.SAVINGS}
+st.markdown(L.css(C), unsafe_allow_html=True)
+CHART = {"displayModeBar": False, "responsive": True}
+SHORT_CRISES = {"2008 financial crisis": "2008", "2011 euro crisis": "Euro 2011", "Jan 2015 CHF shock": "CHF 2015",
+                "COVID 2020": "COVID", "2022 rates and inflation": "2022", "Credit Suisse 2023": "CS 2023"}
 
 
 # =============================================================================
-# Data and results (kept in memory; the backtests also on disk, data/cache/)
+# Data and results (in memory; the backtests also on disk, data/cache/)
 # =============================================================================
 
 @st.cache_data(show_spinner=False)
@@ -48,7 +63,6 @@ def market_data():
 
 @st.cache_resource(show_spinner=False)
 def jobs():
-    """One queue of background jobs for the whole app."""
     return Jobs()
 
 
@@ -61,19 +75,19 @@ def analysis(key):
 @st.cache_data(show_spinner=False, max_entries=64)
 def glide(key):
     persona, changes = json.loads(key)
-    params = A.client_params(persona, changes, base_params())
     res = analysis(key)
-    return A.glide_path(params, res["mu"], res["cov"])
+    return A.glide_path(A.client_params(persona, changes, base_params()), res["mu"], res["cov"],
+                        mu_prior=res["mu_prior"])            # the client's view fades out with the years
 
 
 def background(name, params):
-    """Result of D.remember(name, params): at once if it is saved, otherwise started in the background and
-    None for now. The page then checks every second and reruns when it is ready (poll at the end)."""
+    """The saved result at once, or None while it is computed in the background (the page then
+    checks every second and reruns when it is ready)."""
     result = D.saved(name, params)
     if result is not None:
         return result
     future = jobs().get(D.cache_key(name, params), lambda: D.remember(name, params, market_data()), group=name)
-    return future.result() if future.done() else None       # an error in the computation is raised here
+    return future.result() if future.done() else None
 
 
 def html(text):
@@ -81,45 +95,27 @@ def html(text):
 
 
 def show(fig):
-    """Plotly chart at full width, with the new and the old Streamlit API."""
     try:
-        st.plotly_chart(fig, width="stretch", config=CHART_CONFIG)
+        st.plotly_chart(fig, width="stretch", config=CHART)
     except Exception:
-        st.plotly_chart(fig, use_container_width=True, config=CHART_CONFIG)
+        st.plotly_chart(fig, use_container_width=True, config=CHART)
 
 
-def choice(label, options, default, key, format_func=str):
-    """One choice among a few, as a segmented switch (a radio on an old Streamlit)."""
-    if hasattr(st, "segmented_control"):
-        value = st.segmented_control(label, options, default=default, key=key, format_func=format_func)
-        return value if value is not None else default        # a click on the chosen one unselects it
-    return st.radio(label, options, index=list(options).index(default), horizontal=True, key=key,
-                    format_func=format_func)
-
-
-def crisis_bands(fig, crises):
-    """Shaded crises, with their names on two rows so that close crises do not overlap."""
-    for i, (crisis, (first, last)) in enumerate(crises.items()):
-        x0 = pd.Timestamp(first) - pd.offsets.MonthEnd(1)
-        fig.add_vrect(x0=x0, x1=pd.Timestamp(last) + pd.offsets.MonthEnd(0), fillcolor=T.SECTOR, opacity=0.10,
-                      line_width=0)
-        fig.add_annotation(x=x0, y=1.0 if i % 2 == 0 else 0.9, yref="paper", text=crisis, showarrow=False,
-                           xanchor="left", font=dict(size=9, color=T.FAINT))
+def p_text(p):
+    return "p < 0.01" if p < 0.01 else f"p = {p:.2f}"
 
 
 # =============================================================================
 # Side panel: the client
 # =============================================================================
-
 P0 = base_params()
 APP, PERSONAS, ALLOC = P0["app"], P0["personas"], P0["allocation"]
 INDUSTRIES = APP["industry_names"]
-examples = list(PERSONAS)
 with st.sidebar:
-    html(T.brand())
-    persona = st.selectbox("Start from an example", examples, format_func=lambda k: PERSONAS[k]["label"], key="job")
+    html(L.brand(C))
+    persona = st.selectbox("Start from an example", list(PERSONAS), format_func=lambda k: PERSONAS[k]["label"], key="job")
     p = PERSONAS[persona]
-    k = f"_{persona}"                                       # each example starts from its own values
+    k = f"_{persona}"                                         # each example starts from its own values
     options = list(INDUSTRIES) + [None]
     industry = st.selectbox("I work in", options, index=options.index(p.get("industry")),
                             format_func=lambda i: INDUSTRIES.get(i, APP["no_industry"]), key="industry" + k)
@@ -127,8 +123,8 @@ with st.sidebar:
     age = c1.number_input("Age", *APP["age_range"], int(p["age"]), 1, key="age" + k)
     salary = c2.number_input("Salary, CHF a year", *APP["salary_range"], int(p["salary_chf"]), APP["salary_step"],
                              key="salary" + k)
-    savings = st.number_input("Savings to invest, CHF (employer shares included)", *APP["savings_range"],
-                              int(P0["client"]["portfolio_chf"]), APP["savings_step"], key="savings" + k)
+    savings = st.number_input("Savings to invest, CHF", *APP["savings_range"], int(P0["client"]["portfolio_chf"]),
+                              APP["savings_step"], key="savings" + k)
     stake, unlock, variable = 0.0, 0.0, 0.0
     if industry:
         stake = st.number_input("Of which shares of my employer, CHF", 0, int(savings),
@@ -136,32 +132,35 @@ with st.sidebar:
         if stake > 0:
             unlock = st.slider("They can be sold in (years)", 0, APP["unlock_max_years"], int(p.get("unlock_years", 0)),
                                key="unlock" + k)
-        variable = st.slider("Part of my pay that depends on my industry (bonus)", 0.0, 1.0,
+        variable = st.slider("Share of my pay that is a bonus linked to my industry", 0.0, 1.0,
                              float(p.get("variable_pay", 0.0)), APP["variable_pay_step"], key="variable" + k,
                              format="%.2f")
-    self_employed = st.toggle("I am self-employed (no pension fund)", value=not p.get("pillar2", True),
-                              key="self" + k)
+    self_employed = st.toggle("Self-employed (no pension fund)", value=not p.get("pillar2", True), key="self" + k)
     pension = None
     if not self_employed:
-        how = choice("Pension fund (2nd pillar)", ["Estimate", "My certificate"], "Estimate", "pension_how" + k)
-        if how == "My certificate":
+        how = st.radio("Pension fund (2nd pillar)", ["Estimate it", "From my certificate"], horizontal=True,
+                       key="pension_how" + k)
+        if how == "From my certificate":
             estimate = O.pension_savings(age, salary, A.client_params(persona, None, P0))
             pension = st.number_input("Savings on the certificate, CHF", 0, APP["pension_max"],
                                       int(round(estimate, -3)), APP["pension_step"], key="pension" + k)
     profiles = list(ALLOC["profiles"])
-    profile = choice("Risk profile", profiles, ALLOC["default_profile"], "profile" + k, format_func=str.capitalize)
+    profile = st.radio("Risk profile", profiles, index=profiles.index(ALLOC["default_profile"]), horizontal=True,
+                       format_func=str.capitalize, key="profile" + k)
     with st.expander("Advanced"):
         view = None
         if st.toggle("Add my own view on one market", key="view_on" + k):
-            asset = st.selectbox("Market", A.assets(P0), format_func=T.asset_name, key="vasset" + k)
+            from src.theme import asset_name
+            asset = st.selectbox("Market", A.assets(P0), format_func=asset_name, key="vasset" + k)
             low, high, step = APP["view_return_range"]
             q = st.slider("Expected return above cash, a year", low, high, APP["view_default"], step,
                           key="vq" + k, format="%.3f")
             levels = list(APP["view_confidence"])
-            confidence = choice("Confidence", levels, levels[len(levels) // 2], "vc" + k)
+            confidence = st.radio("Confidence", levels, index=len(levels) // 2, horizontal=True, key="vc" + k)
             view = {"asset": asset, "q": q, "sd": APP["view_confidence"][confidence]}
-    html('<p class="btp-side-note">Everything updates as you type. The backtest takes a few seconds the first '
-         "time for a new client.</p>")
+            st.caption(f"A view is about the next years: it fades out over {ALLOC['view_years']} years in the "
+                       "plan by age, and the backtest does not use it.")
+    html('<p class="v3-side-note">The page updates as you type. The backtest of a new client takes a few seconds.</p>')
 
 changes = {"industry": industry, "age": age, "salary_chf": salary, "portfolio_chf": savings,
            "stake_chf": float(stake), "unlock_years": float(unlock), "variable_pay": float(variable),
@@ -177,277 +176,313 @@ params, sheet = res["params"], res["sheet"]
 client = params["client"]
 F, W = sheet["F"], sheet["W"]
 plans = res["plans"]
-C_, A_ = plans["C"], plans["A"]
-wC, wA = C_["weights"], A_["weights"]
-gC, gA = C_["groups"], A_["groups"]
-retire = client["retirement_age"]
-ind_name = INDUSTRIES.get(industry, "") if industry else None
-bt = background("backtest2", params)
+pC, pA = plans["C"], plans["A"]
+gC, gA = pC["groups"], pA["groups"]
+dC = pC["detail"]
+excluded = bool(dC["excluded"])
+ind_name = INDUSTRIES.get(industry) if industry else None
+ind_short = ind_name.split(" (")[0].lower() if ind_name else ""
+story = background("story", A.without_client_view(params))   # nobody knew the client's view in 2005
 first_month = market_data()[0].index[int(params["backtest"]["window_months"])]
+typical_bonds = float(ALLOC["profiles"][profile]["safe_share"])      # typical advice: the profile's model portfolio
+MIX = f"{1 - typical_bonds:.0%}/{typical_bonds:.0%}".replace("%", "")
 
 # =============================================================================
-# Header
+# The answer
 # =============================================================================
-html(f'<div class="btp-who">{T.esc(ind_name or APP["no_industry"])}, {age} years old, '
-     f'{T.chf(salary, short=False)} a year {T.status(bt is None, "Backtest ready" if bt is not None else "Updating the backtest")}</div>')
-parts = [f"{T.pct(gC['equities'])} in shares", f"{T.pct(gC['real'])} in real assets",
-         f"{T.pct(gC['bonds'])} in bonds"]
-if gC["cash"] >= APP["min_weight"] * 10:
-    parts.append(f"{T.pct(gC['cash'])} in cash")
-mix = ", ".join(parts[:-1]) + " and " + parts[-1]
-html(f'<div class="btp-headline">Invest your {T.chf(F, short=False)}: <em>{mix}</em>.</div>')
-dC, dA = C_["detail"]["safe_share"], A_["detail"]["safe_share"]
-lede = (f"{T.pct(sheet['bond_like'])} of what you own already behaves like a bond (your future salary and "
-        f"pension), so your savings need {T.pct(dC)} in bonds instead of the usual {T.pct(dA)}")
-lede += f", and we leave out {ind_name.lower()}." if C_["detail"]["excluded"] else "."
-html(f'<p class="btp-lede">{lede}</p>')
-html(T.wealth({"H": sheet["H"], "P": sheet["P"], "F": F, "W": W}))
+who = f"{ind_name or 'Pay not linked to an industry'} · {age} years old · {L.chf(salary, short=False)} a year"
+head, switch = st.columns([6, 1], vertical_alignment="center")
+with head:
+    html(f'<div class="v3-kicker">{L.esc(who)}</div>')
+with switch.container(key="theme_switch"):
+    st.toggle("Light", key="light", help="Light or dark page")
+parts = [f"{L.pct(gC['equities'])} in shares", f"{L.pct(gC['real'])} in real assets", f"{L.pct(gC['bonds'])} in bonds"]
+if gC["cash"] >= 0.005:
+    parts.append(f"{L.pct(gC['cash'])} in cash")
+html(f'<div class="v3-title">Invest your {L.chf(F, short=False)}: <em>{", ".join(parts[:-1])} and {parts[-1]}</em>.</div>')
+lede = (f"Typical advice gives every {profile} investor {L.pct(1 - typical_bonds)} growth and {L.pct(typical_bonds)} "
+        f"bonds. We start from the same mix and look at "
+        f"your job: <b>your future salary already works like a bond</b>, so your savings need only "
+        f"{L.pct(gC['bonds'])} in bonds")
+lede += f", and <b>no extra {ind_short}</b>, because your pay already depends on it." if excluded else "."
+html(f'<p class="v3-lede">{lede}</p>')
+
+
+def mix_parts(g, values=True):
+    return [(g[k], L.group_color(C, k), L.pct(g[k]) if values else "") for k in ("equities", "real", "bonds", "cash")]
+
+
+row1 = st.columns([1.15, 1], gap="medium")
+with row1[0]:
+    with st.container(key="card_plan"):
+        html(L.heading("1 · Your savings", "Our plan against typical advice"))
+        html(L.bar(C, "Typical", f"{MIX}, {profile} model", mix_parts(gA))
+             + L.bar(C, "Our plan", "built around your job", mix_parts(gC)))
+        html(L.legend([(L.group_color(C, k), L.GROUPS[k]) for k in ("equities", "real", "bonds")
+                       + (("cash",) if gC["cash"] >= 0.005 else ())]))
+        items = []
+        stake_now = dC["stake"] if dC["locked"] else 0.0
+        shares_txt = "in 11 industries and Switzerland" if excluded else "in 12 industries and Switzerland"
+        items.append(("Shares", shares_txt, L.chf(gC["equities"] * F - stake_now, short=False)))
+        if stake_now > 0:
+            items.append(("Your employer shares", f"locked {unlock:.0f} more year{'s' if unlock != 1 else ''}",
+                          L.chf(stake_now, short=False)))
+        items.append(("Real assets", "Swiss real estate, gold, commodities", L.chf(gC["real"] * F, short=False)))
+        items.append(("Bonds", "Swiss, global hedged, corporate", L.chf(gC["bonds"] * F, short=False)))
+        if gC["cash"] >= 0.005:
+            items.append(("Cash", "close to retirement: the loss limit", L.chf(gC["cash"] * F, short=False)))
+        html(L.rows(items))
+
+with row1[1]:
+    with st.container(key="card_wealth"):
+        html(L.heading("2 · Why", "You are more than your savings"))
+        html(f'<div class="v3-big">{L.chf(W)}</div><p class="v3-note" style="margin:0 0 0.7rem">everything you own, '
+             "today's value</p>")
+        html(L.bar(C, "", "", [(sheet["H"] / W, C["career"], ""), (sheet["P"] / W, C["pension"], ""),
+                               (F / W, C["ours"], "")], show_values=False))
+        html(L.legend([(C["career"], f"Career {L.chf(sheet['H'])}"), (C["pension"], f"Pension {L.chf(sheet['P'])}"),
+                       (C["ours"], f"Savings {L.chf(F)}")]))
+        safe = sheet["career_bonds"] + sheet["P"]
+        html(f'<p class="v3-p" style="margin-top:0.8rem">Your savings are only {L.pct(F / W)} of your wealth. '
+             f"<b>{L.chf(safe)} ({L.pct(sheet['bond_like'])}) works like a bond</b>: the steady part of your future "
+             f"salary ({L.chf(sheet['career_bonds'])}) plus your pension ({L.chf(sheet['P'])}). "
+             f"That is why your savings can hold fewer bonds: {L.pct(typical_bonds)} "
+             f"× (1 − {L.pct(sheet['bond_like'])}) = {L.pct(dC['safe_share'])}.</p>")
 
 # =============================================================================
-# The four panels
+# What it was worth, and what it costs
 # =============================================================================
-names = A.assets(params)
-order = ["STAKE"] + [a for a in names if max(wC.get(a, 0), wA.get(a, 0)) >= APP["min_weight"]] + ["CASH"]
-
-
-def with_stake(weights, detail):
-    """The weights with the locked employer shares shown apart (in rose), not inside their industry."""
-    w = weights.copy()
-    w["STAKE"] = 0.0
-    if detail["locked"] and industry:
-        share = detail["stake"] / F
-        w[industry] -= share
-        w["STAKE"] = share
-    return w.reindex(order).fillna(0).clip(lower=0)
-
-
-
-left, right = st.columns([1, 1.25], gap="small")
-with left:
-    with st.container(key="panel_plan"):
-        html(T.panel_title("Your portfolio", T.chf(F, short=False)))
-        sC, sA = with_stake(wC, C_["detail"]), with_stake(wA, A_["detail"])
-        html('<div class="btp-bars">' + T.bar_row("Our plan", sC, params, "ours", APP["min_weight"], labels=False)
-             + T.bar_row("Typical", sA, params, "typical", APP["min_weight"], labels=False) + "</div>")
-        rows = []
-        if sC["STAKE"] > 0:
-            rows.append((T.SECTOR, "Your employer shares", T.chf(sC["STAKE"] * F, short=False), T.pct(sC["STAKE"])))
-        industries = [a for a in ALLOC["groups"]["equities"] if a.startswith("IND_") and sC.get(a, 0) >= APP["min_weight"]]
-        shares = float(sC.reindex(ALLOC["groups"]["equities"]).fillna(0).sum())
-        rows.append((T.SAVINGS, f"Shares in {len(industries)} industries and Switzerland", T.chf(shares * F, short=False),
-                     T.pct(shares)))
-        for g, label in (("real", "Real estate, gold, commodities"), ("bonds", "Bonds: Swiss, global, corporate")):
-            if gC[g] >= APP["min_weight"]:
-                rows.append((T.GROUP_COLORS[g], label, T.chf(gC[g] * F, short=False), T.pct(gC[g])))
-        if gC["cash"] >= APP["min_weight"]:
-            rows.append((T.FAINT, "Cash", T.chf(gC["cash"] * F, short=False), T.pct(gC["cash"])))
-        html(T.holdings(rows))
-        why = []
-        if C_["detail"]["excluded"]:
-            reason = []
-            if client["variable_pay"] > 0:
-                reason.append(f"{T.pct(client['variable_pay'])} of your pay")
-            if client["stake_chf"] > 0:
-                reason.append("your employer shares")
-            why.append((T.SECTOR, f"<b>No {ind_name.lower()} in the rest.</b> {' and '.join(reason).capitalize()} "
-                                  "already depend on it: a bad year there would hit you twice."))
-        if C_["detail"]["locked"]:
-            why.append((T.SECTOR, f"<b>Your employer shares stay {unlock:.0f} more year{'s' if unlock != 1 else ''}.</b> "
-                                  "The rest is built around them; then they join the plan."))
-        why.append((T.BONDS, f"<b>Your job works like a bond.</b> So {T.pct(dC)} in bonds, not {T.pct(dA)}."))
-        moved = C_["detail"]["cash_from_loss_limit"]
-        if moved > 0:
-            why.append((T.SAVINGS, f"<b>Close to retirement.</b> A bad year could cost more than you can still save, "
-                                   f"so {T.pct(moved)} goes to cash."))
+row2 = st.columns([1.15, 1], gap="medium")
+with row2[0]:
+    with st.container(key="card_changes"):
+        html(L.heading("3 · The result", "The two changes, and what each was worth",
+                       f"Replayed month by month since {first_month:%B %Y} for someone like you, in CHF a year "
+                       "once risk is counted."))
+        if story is None:
+            html(L.waiting("Replaying the past for this client..."))
         else:
-            why.append((T.SAVINGS, f"<b>A bad year (1 in 20) costs about {T.chf(C_['detail']['loss'])}.</b> "
-                                   f"Within your {profile} profile, with {T.chf(C_['detail']['savings_left'])} still "
-                                   "to save before retiring."))
-        html(T.why(why))
+            g = story["gains"]
+            g1, g2, gt = (g.loc[i] for i in ("(M) vs (A)", "(C) vs (M)", "(C) vs (A)"))
+            v1, v2, vt = (float(x["CE gain (CHF/yr)"]) for x in (g1, g2, gt))
+            labels = [f"Typical {MIX}", "Fewer bonds"] + ([f"No extra {ind_short}"] if excluded else []) + ["Our plan"]
+            ys = [0, v1] + ([v2] if excluded else []) + [0]
+            measures = ["absolute", "relative"] + (["relative"] if excluded else []) + ["total"]
+            texts = ["0", L.signed_chf(v1)] + ([L.signed_chf(v2)] if excluded else []) + [L.signed_chf(vt)]
+            fig = go.Figure(go.Waterfall(
+                x=labels, y=ys, measure=measures, text=texts, textposition="outside",
+                textfont=dict(color=C["text"], size=13), cliponaxis=False,
+                connector=dict(line=dict(color=C["line"], width=1)),
+                increasing=dict(marker=dict(color=C["good"])), decreasing=dict(marker=dict(color=C["bad"])),
+                totals=dict(marker=dict(color=C["ours"])),
+                hovertemplate="%{x}: %{text} a year<extra></extra>"))
+            top_v = max(v1, vt, v1 + (v2 if excluded else 0))
+            fig.update_layout(**L.plot_layout(C, 250, margin=dict(l=4, r=8, t=28, b=8)))
+            fig.update_yaxes(tickprefix="CHF ", tickformat="~s", range=[min(0, v2 if excluded else 0, v1 + v2) * 1.3,
+                                                                       top_v * 1.25])
+            show(fig)
+            html(L.change(1, "Fewer bonds: your job is a bond",
+                          f"Bonds go from {L.pct(typical_bonds)} to {L.pct(dC['safe_share'])}; the money goes to shares "
+                          "and real assets, which earn more over time.", L.signed_chf(v1),
+                          C["good"] if v1 >= 0 else C["bad"], g1["p-value"] <= 0.05, L.chance(g1["p-value"])))
+            if excluded:
+                html(L.change(2, f"No extra {ind_short}: no second bet on your industry",
+                              f"A bad year for {ind_short} already hits your bonus"
+                              f"{' and your employer shares' if stake_now > 0 else ''}. Leaving it out lowers the "
+                              "risk in your industry's worst months: it is insurance, not a source of profit"
+                              + (f", and here its premium is {L.chf(-v2, short=False)} a year." if v2 < 0 else
+                                 ". Here it also happened to earn a little."),
+                              L.signed_chf(v2), C["good"] if v2 >= 0 else C["bad"], g2["p-value"] <= 0.05,
+                              L.chance(g2["p-value"])))
+            html(f'<p class="v3-note">Certainty equivalent on total wealth (gain in return minus the cost of the extra '
+                 f"risk), same wealth for every strategy, 10 bp trading costs, block bootstrap. "
+                 f"Total {L.signed_chf(vt)} a year, {p_text(gt['p-value'])}.</p>")
 
-with right:
-    with st.container(key="panel_backtest"):
-        html(T.panel_title(f"Since {first_month:%B %Y}", "you then, our plan against typical advice"))
-        if bt is None:
-            html(T.waiting("Replaying the past for this client..."))
+with row2[1]:
+    with st.container(key="card_cost"):
+        html(L.heading("4 · The price", "What you give up"))
+        if story is None:
+            html(L.waiting("Replaying the past for this client..."))
         else:
-            values = bt["values"]
+            m = story["metrics"]
+            crises = story["crises"]["portfolio return"].unstack("strategy")
+            gfc = "2008 financial crisis"
+            tl = [("Your savings swing, a year", L.pct(m.loc["portfolio volatility", "C"], 1),
+                   f"typical {L.pct(m.loc['portfolio volatility', 'A'], 1)}"),
+                  ("Worst fall of the savings", L.pct(m.loc["portfolio max drawdown", "C"]),
+                   f"typical {L.pct(m.loc['portfolio max drawdown', 'A'])}")]
+            if gfc in crises.index:
+                tl.append(("In the 2008 crisis", L.pct(crises.loc[gfc, "C"]), f"typical {L.pct(crises.loc[gfc, 'A'])}"))
+            tl.append(("Everything you own swings, a year", L.pct(m.loc["total wealth volatility", "C"], 1),
+                       f"typical {L.pct(m.loc['total wealth volatility', 'A'], 1)}"))
+            html(L.tiles(tl))
+            html(f'<p class="v3-p" style="margin-top:0.6rem"><b>Your savings will move more.</b> You are paid for it '
+                 f"(step 3), and your salary, which keeps coming in a crash, absorbs it: everything you own "
+                 f"swings almost as little as before.</p>")
+            if dC.get("loss") is not None and dC["cash_from_loss_limit"] == 0:
+                html(f'<p class="v3-note">A bad year (1 in 20) would cost your savings about {L.chf(dC["loss"])} today, '
+                     f"within your {profile} profile.</p>")
+
+# =============================================================================
+# The past and the future
+# =============================================================================
+row3 = st.columns([1.15, 1], gap="medium")
+with row3[0]:
+    with st.container(key="card_history"):
+        html(L.heading("5 · The past", f"Since {first_month:%B %Y}, someone like you",
+                       f"Aged {story['start_age']:.0f} in {first_month:%Y}, saving "
+                       f"{L.pct(params['backtest']['savings_rate'])} of the salary; each decision uses only the "
+                       f"past {params['backtest']['window_months']} months." if story else None))
+        if story is None:
+            html(L.waiting("Replaying the past for this client..."))
+        else:
+            values = story["values"]
             fig = go.Figure()
-            crisis_bands(fig, params["backtest"]["crises"])
-            for s, width in (("A", 1.8), ("C", 2.6)):
-                fig.add_trace(go.Scatter(x=values.index, y=values[s], name=NAMES[s], mode="lines",
-                                         line=dict(color=COLORS[s], width=width),
-                                         hovertemplate=NAMES[s] + ": CHF %{y:,.0f}<extra></extra>"))
-            fig.update_layout(**T.plot_layout(214, hovermode="x unified", showlegend=False))
+            for i, (crisis, (first, last)) in enumerate(params["backtest"]["crises"].items()):
+                x0 = pd.Timestamp(first) - pd.offsets.MonthEnd(1)
+                fig.add_vrect(x0=x0, x1=pd.Timestamp(last) + pd.offsets.MonthEnd(0), fillcolor=C["band"], line_width=0,
+                              layer="below")
+                fig.add_annotation(x=x0, y=1.0 - 0.07 * (i % 2), yref="paper", text=SHORT_CRISES.get(crisis, crisis),
+                                   showarrow=False, xanchor="left", font=dict(size=9, color=C["faint"]))
+            for s, name, col, width in (("A", f"Typical {MIX}", C["typical"], 1.8), ("C", "Our plan", C["ours"], 2.6)):
+                fig.add_trace(go.Scatter(x=values.index, y=values[s], name=name, mode="lines",
+                                         line=dict(color=col, width=width),
+                                         hovertemplate=name + ": CHF %{y:,.0f}<extra></extra>"))
+            fig.update_layout(**L.plot_layout(C, 260, hovermode="x unified", showlegend=True, legend_traceorder="reversed",
+                                              legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0, font=dict(color=C["muted"])),
+                                              margin=dict(l=4, r=8, t=30, b=8)))
+            fig.update_xaxes(range=[values.index[0], values.index[-1]])
             fig.update_yaxes(tickprefix="CHF ", tickformat="~s")
             show(fig)
-            m = bt["metrics"]
-            g = bt["gains"].loc["(C) vs (A)"]
-            html(T.stats([(T.chf(values["C"].iloc[-1]), f"today with our plan, against {T.chf(values['A'].iloc[-1])} "
-                           "with typical advice", T.SAVINGS),
-                          (f"{T.chf(g['CE gain (CHF/yr)'])} a year", f"better once risk is counted, p = {g['p-value']:.2f}",
-                           None),
-                          (T.pct(m.loc["portfolio max drawdown", NAMES["C"]]), "worst fall, against "
-                           f"{T.pct(m.loc['portfolio max drawdown', NAMES['A']])} with typical advice", None)]))
-            html(f'<p class="btp-panel-note">Someone like you, {bt["start_age"]:.0f} in {first_month:%B %Y}, saving '
-                 f"{T.pct(params['backtest']['savings_rate'])} of the salary; each decision uses only the past "
-                 f"{params['backtest']['window_months']} months, with trading costs.</p>")
+            html(L.tiles([("Today with our plan", L.chf(values["C"].iloc[-1]), f"typical {L.chf(values['A'].iloc[-1])}"),
+                          ("Saved along the way", L.chf(story["savings"]), "the same for both")]))
 
-left, right = st.columns([1, 1.25], gap="small")
-with left:
-    with st.container(key="panel_risk"):
-        html(T.panel_title("Where the risk of your savings comes from",
-                           f"{C_['diversification']['effective bets']:.0f} independent bets against "
-                           f"{A_['diversification']['effective bets']:.0f}"))
-        fig = go.Figure()
-        for g, colour in (("stake", T.SECTOR), ("equities", T.SAVINGS), ("real", T.PENSION), ("bonds", T.BONDS)):
-            values = [float(plans[s]["risk_parts"][g]) for s in ("C", "A")]
-            if max(values) < APP["min_weight"]:
-                continue
-            label = "Employer shares" if g == "stake" else T.GROUP_NAMES[g]
-            fig.add_trace(go.Bar(y=[NAMES["C"], NAMES["A"]], x=values, name=label, orientation="h", marker_color=colour,
-                                 hovertemplate=label + ": %{x:.0%}<extra></extra>"))
-        fig.update_layout(**T.plot_layout(170, barmode="stack", legend_traceorder="normal",
-                                          legend=dict(orientation="h", yanchor="top", y=-0.3, x=0,
-                                                      font=dict(color=T.MUTED, size=11)),
-                                          margin=dict(l=4, r=8, t=4, b=40)))
-        fig.update_xaxes(tickformat=".0%", range=[0, 1], showgrid=True, gridcolor=T.LINE)
-        fig.update_yaxes(autorange="reversed")
-        show(fig)
-        dv = C_["diversification"]
-        html(f'<p class="btp-panel-note">Risk contributions (lab LN5): the share of the ups and downs of your savings '
-             f"that comes from each part. Volatility {T.pct(dv['volatility'], 1)} a year; diversification ratio "
-             f"{dv['diversification ratio']:.2f} against {A_['diversification']['diversification ratio']:.2f} "
-             "for typical advice (LN6).</p>")
-
-with right:
-    with st.container(key="panel_glide"):
+with row3[1]:
+    with st.container(key="card_glide"):
+        html(L.heading("6 · The future", "As you get older",
+                       "Each year one salary is paid out, so less of your wealth works like a bond and your "
+                       "savings hold more bonds."))
         gl = glide(key).copy()
-        html(T.panel_title("As you get older", "bonds grow as your career shrinks"))
         if len(gl) > 1:
-            gl.loc[retire] = gl.iloc[-1]
+            gl.loc[client["retirement_age"]] = gl.iloc[-1]
             fig = go.Figure()
-            for grp in ("equities", "real", "bonds", "cash"):
-                if gl[("C", grp)].max() > APP["min_weight"]:
-                    fig.add_trace(go.Scatter(x=gl.index, y=gl[("C", grp)], name=T.GROUP_NAMES[grp], stackgroup="mix",
-                                             mode="lines", line=dict(width=0, color=T.GROUP_COLORS[grp]),
-                                             fillcolor=T.GROUP_COLORS[grp],
-                                             hovertemplate=T.GROUP_NAMES[grp] + ": %{y:.0%}<extra></extra>"))
-            fig.add_trace(go.Scatter(x=gl.index, y=1 - gl[("A", "bonds")] - gl[("A", "cash")],
-                                     name="Typical advice, not bonds", mode="lines",
-                                     line=dict(color=T.TEXT, width=1.5, dash="dot"),
-                                     hovertemplate="Typical advice: %{y:.0%} outside bonds<extra></extra>"))
-            fig.update_layout(**T.plot_layout(190, hovermode="x unified", legend_traceorder="normal"))
-            fig.update_yaxes(tickformat=".0%", range=[0, 1.02])
+            for grp in ("bonds", "cash", "real", "equities"):        # bonds at the bottom, like the 40% line
+                if gl[("C", grp)].max() > 0.005:
+                    col = L.group_color(C, grp)
+                    fig.add_trace(go.Scatter(x=gl.index, y=gl[("C", grp)], name=L.GROUPS[grp], stackgroup="mix",
+                                             mode="lines", line=dict(width=0, color=col), fillcolor=col,
+                                             hovertemplate=L.GROUPS[grp] + ": %{y:.0%}<extra></extra>"))
+            fig.add_trace(go.Scatter(x=gl.index, y=gl[("A", "bonds")] + gl[("A", "cash")], name="Typical: bonds",
+                                     mode="lines", line=dict(color=C["text"], width=1.4, dash="dot"),
+                                     hovertemplate="Typical: %{y:.0%} in bonds<extra></extra>"))
+            fig.update_layout(**L.plot_layout(C, 250, hovermode="x unified", showlegend=True,
+                                              legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0, font=dict(color=C["muted"])),
+                                              margin=dict(l=4, r=8, t=30, b=8)))
+            fig.update_yaxes(tickformat=".0%", range=[0, 1.0])
+            fig.update_xaxes(title=None)
             show(fig)
-        html(f'<p class="btp-panel-note">Our plan solved again every {APP["glide_step_years"]} years with the wealth '
-             f"you are expected to have then. Every year a salary is paid out, so less of your wealth behaves like "
-             f"a bond and the savings hold more bonds; near retirement the loss limit adds cash.</p>")
+        html(f'<p class="v3-note">The bonds band (teal, at the bottom) grows with age. The dotted line is the '
+             f"{L.pct(typical_bonds)} in bonds of typical advice, the same at every age.</p>")
 
 # =============================================================================
 # Details
 # =============================================================================
-tabs = st.tabs(["Holdings", "Budgets and returns", "Backtest", "Assumptions"])
+with st.expander("Details: every holding, the full backtest, the assumptions"):
+    names = {"A": f"Typical {MIX}", "M": "Fewer bonds only", "C": "Our plan", "B": "100 minus age"}
+    html('<div class="v3-sub">Every holding, in CHF</div>')
+    hold = pd.DataFrame({names[s]: plans[s]["weights"] * F for s in ("A", "M", "C", "B")})
+    hold = hold[(hold.abs() > 1).any(axis=1)]
+    from src.theme import asset_name
+    hold.index = [asset_name(a) for a in hold.index]
+    html(L.table(hold, {c: (lambda v: L.chf(v, short=False)) for c in hold.columns}))
 
-with tabs[0]:
-    html('<div class="btp-h3">Every holding, in CHF</div><p class="btp-p">Our plan, typical advice (it knows '
-         "neither your job nor your shares) and 100 minus age.</p>")
-    table = pd.DataFrame({NAMES[s]: plans[s]["weights"] * F for s in ("C", "A", "B")})
-    table = table[(table.abs() > 1).any(axis=1)]
-    table.index = [T.asset_name(a) for a in table.index]
-    html(T.table(table, {c: (lambda v: T.chf(v, short=False)) for c in table.columns}))
+    html('<div class="v3-sub">Where the risk of your savings comes from</div>')
+    dC_, dA_ = pC["diversification"], pA["diversification"]
+    html(f'<p class="v3-p">Risk contributions: the share of the ups and downs of your savings that comes from each '
+         f"part. Our plan spreads the risk over <b>{dC_['effective bets']:.0f} independent bets</b> against "
+         f"{dA_['effective bets']:.0f} for typical advice, but its parts move more together (more shares, fewer "
+         f"bonds): diversification ratio {dC_['diversification ratio']:.2f} against {dA_['diversification ratio']:.2f}. "
+         f"Volatility of the savings {L.pct(dC_['volatility'], 1)} against {L.pct(dA_['volatility'], 1)} a year.</p>")
+    fig = go.Figure()
+    for grp, col in (("stake", C["industry"]), ("equities", C["ours"]), ("real", C["real"]), ("bonds", C["bonds"])):
+        vals = [float(plans[s]["risk_parts"][grp]) for s in ("C", "A")]
+        if max(vals) < APP["min_weight"]:
+            continue
+        label = "Employer shares" if grp == "stake" else L.GROUPS[grp]
+        fig.add_trace(go.Bar(y=["Our plan", f"Typical {MIX}"], x=vals, name=label, orientation="h", marker_color=col,
+                             hovertemplate=label + ": %{x:.0%}<extra></extra>"))
+    fig.update_layout(**L.plot_layout(C, 170, barmode="stack", showlegend=True,
+                                      legend=dict(orientation="h", y=1.02, yanchor="bottom", x=0,
+                                                  font=dict(color=C["muted"])),
+                                      margin=dict(l=4, r=8, t=30, b=8)))
+    fig.update_xaxes(tickformat=".0%", range=[0, 1], showgrid=True, gridcolor=C["line"])
+    fig.update_yaxes(autorange="reversed", showgrid=False)
+    show(fig)
 
-with tabs[1]:
-    html('<div class="btp-h3">How the plan is built</div><p class="btp-p">Risk budgeting as in lab LN5: every asset '
-         "we buy carries a share of the risk equal to its budget. Between groups the budgets come from your "
-         "risk profile; inside a group they follow the Black-Litterman Sharpe ratios (LN4), with a floor so "
-         "no asset is dropped. Covariance with Ledoit-Wolf shrinkage (LN3).</p>")
+    html('<div class="v3-sub">How the plan is built</div><p class="v3-p">Risk budgeting: every asset we buy carries a '
+         "share of the risk equal to its budget. Between groups the budgets come from your risk profile; inside a "
+         "group they follow the Sharpe ratios of the Black-Litterman expected returns, with a floor so no asset is "
+         "dropped. Covariance with Ledoit-Wolf shrinkage.</p>")
+    import numpy as np
     vol = np.sqrt(np.diag(res["cov"]))
     info = pd.DataFrame({"Market weight (prior)": res["estimates"]["market_weights"],
-                         "Expected return above cash": res["mu"], "Volatility": vol,
-                         "Sharpe ratio": res["mu"] / vol, "Risk budget, our plan": C_["detail"]["budgets"],
-                         "Risk contribution, our plan": C_["risk"]})
-    info.index = [T.asset_name(a) for a in info.index]
-    fmt = {c: (lambda v: T.pct(v, 1)) for c in info.columns}
+                         "Expected return above cash": res["mu"], "Volatility": vol, "Sharpe ratio": res["mu"] / vol,
+                         "Risk budget, our plan": dC["budgets"], "Risk contribution, our plan": pC["risk"]})
+    info.index = [asset_name(a) for a in info.index]
+    fmt = {col: (lambda v: L.pct(v, 1)) for col in info.columns}
     fmt["Sharpe ratio"] = lambda v: f"{v:.2f}"
-    html(T.table(info, fmt))
-    st.caption(f"{res['months']} months of data. Market risk aversion {res['estimates']['phi']:.2f}, "
-               f"shrinkage {res['estimates']['shrinkage']:.2f}.")
+    html(L.table(info, fmt))
+    html(f'<p class="v3-note">{res["months"]} months of data. Market risk aversion {res["estimates"]["phi"]:.2f}, '
+         f'shrinkage {res["estimates"]["shrinkage"]:.2f}.</p>')
 
-with tabs[2]:
-    if bt is None:
-        html(T.waiting("Running the backtest for this client..."))
-    else:
-        values = bt["values"]
-        html(f'<div class="btp-h3">Three strategies since {first_month:%B %Y}</div><p class="btp-p">The same client '
-             f"followed month by month with real CHF data; savings added: {T.chf(bt['savings'])}. Gains compare "
-             "certainty equivalents on total wealth with the same wealth shares for every strategy.</p>")
-        c1, c2 = st.columns([1.1, 1.5], gap="large")
-        with c1:
-            labels = {"(C) vs (A)": "Ours vs<br>typical", "(C) vs (B)": "Ours vs<br>100 - age",
-                      "(B) vs (A)": "100 - age<br>vs typical"}
-            g = bt["gains"].loc[list(labels)]
-            fig = go.Figure(go.Bar(
-                x=[f"{labels[i]}<br>p = {g.loc[i, 'p-value']:.2f}" for i in g.index], y=g["CE gain (CHF/yr)"],
-                marker_color=[T.SAVINGS, T.SAVINGS, T.TYPICAL],
-                error_y=dict(type="data", symmetric=False, array=g["95% high (CHF/yr)"] - g["CE gain (CHF/yr)"],
-                             arrayminus=g["CE gain (CHF/yr)"] - g["95% low (CHF/yr)"], color=T.MUTED, thickness=1.2,
-                             width=6),
-                hovertemplate="CHF %{y:,.0f} a year<extra></extra>"))
-            fig.update_layout(**T.plot_layout(300))
-            fig.update_yaxes(tickprefix="CHF ", tickformat="~s", zeroline=True, zerolinecolor=T.MUTED)
-            show(fig)
-            st.caption("CHF a year, with the 95% interval (block bootstrap).")
-        with c2:
-            fig = go.Figure()
-            crisis_bands(fig, params["backtest"]["crises"])
-            for s in ("A", "B", "C"):
-                fig.add_trace(go.Scatter(x=values.index, y=values[s], name=NAMES[s], mode="lines",
-                                         line=dict(color=COLORS[s], width=2.6 if s == "C" else 1.6),
-                                         hovertemplate=NAMES[s] + ": CHF %{y:,.0f}<extra></extra>"))
-            fig.update_layout(**T.plot_layout(300, hovermode="x unified",
-                                              legend=dict(orientation="h", yanchor="top", y=-0.08, x=0)))
-            fig.update_yaxes(tickprefix="CHF ", tickformat="~s")
-            show(fig)
-        crises = bt["crises"]["portfolio return"].unstack("strategy")
-        order_c = [c for c in params["backtest"]["crises"] if c in crises.index]
-        crises = crises.loc[order_c, ["A", "B", "C"]].rename(columns=NAMES)
-        html('<div class="btp-h3">In the crises</div>')
-        html(T.table(crises, {c: (lambda v: T.pct(v, 1)) for c in crises.columns}, signed=list(crises.columns)))
-        rows = ["portfolio excess return (annual)", "portfolio volatility", "portfolio max drawdown",
-                "average share outside bonds and cash", "turnover per year"]
-        metrics = bt["metrics"][[NAMES[s] for s in ("A", "B", "C")]]
-        html('<div class="btp-h3">Numbers</div>')
-        html(T.table(metrics.loc[[r for r in rows if r in metrics.index]].rename(index=str.capitalize),
-                     {c: (lambda v: f"{v:.2f}") for c in metrics.columns}))
-
-with tabs[3]:
+    if story is not None:
+        html('<div class="v3-sub">Backtest, every comparison</div>')
+        gl_ = story["gains"].rename(index={"(M) vs (A)": "Fewer bonds vs typical", "(C) vs (M)": "No own industry vs fewer bonds",
+                                           "(C) vs (A)": "Our plan vs typical", "(B) vs (A)": "100 minus age vs typical"})
+        cols = {"CE gain (CHF/yr)": "Gain, CHF a year", "return part (CHF/yr)": "from return",
+                "risk part (CHF/yr)": "from risk", "95% low (CHF/yr)": "95% low", "95% high (CHF/yr)": "95% high",
+                "p-value": "p-value"}
+        gl_ = gl_[list(cols)].rename(columns=cols)
+        fm = {c: (lambda v: L.signed_chf(v)) for c in gl_.columns}
+        fm["p-value"] = p_text
+        html(L.table(gl_, fm))
+        rows_m = {"portfolio excess return (annual)": "Return above cash, a year", "portfolio volatility": "Volatility",
+                  "portfolio max drawdown": "Worst fall", "total wealth volatility": "Total wealth volatility",
+                  "average share outside bonds and cash": "Average share outside bonds", "turnover per year": "Turnover, a year"}
+        mt = story["metrics"].loc[list(rows_m), ["A", "M", "C", "B"]].rename(index=rows_m, columns=names)
+        html('<div class="v3-sub">The savings in the backtest</div>')
+        html(L.table(mt, {c: (lambda v: L.pct(v, 1)) for c in mt.columns}))
+        cr = story["crises"]["portfolio return"].unstack("strategy")
+        cr = cr.loc[[c for c in params["backtest"]["crises"] if c in cr.index], ["A", "M", "C", "B"]].rename(columns=names)
+        html('<div class="v3-sub">In the crises</div>')
+        html(L.table(cr, {c: (lambda v: L.pct(v, 1)) for c in cr.columns}))
     prof = ALLOC["profiles"][profile]
-    c = params["career"]
-    rows = [
-        ("Risk profile", f"{profile}: bonds {T.pct(prof['safe_share'])} of the savings for someone with no career; "
-                         f"growth risk {T.pct(prof['equities'])} shares, {T.pct(prof['real'])} real assets", "Group choice"),
-        ("Bonds in our plan", "profile's bond share x (1 - bond-like share of wealth)", "Total wealth (steps 2-3)"),
-        ("Bond-like share of wealth", "(bond beta of the career x career value + pension) / total wealth",
-         "Career model (step 2)"),
+    assumptions = [
+        ("Typical advice", "the profile's model portfolio, growth (shares and real assets) / bonds: "
+                           + ", ".join(f"{n} {1 - v['safe_share']:.0%}/{v['safe_share']:.0%}".replace("%", "")
+                                       for n, v in ALLOC["profiles"].items()), "Bank model portfolios"),
+        ("Bonds in our plan", f"{L.pct(prof['safe_share'])} ({profile}) × (1 − share of wealth that works like a bond)",
+         "Total wealth, steps 2 and 3"),
+        ("Works like a bond", "bond beta of the career × career value + pension", "Career model, step 2"),
         ("Own industry", "left out when part of the pay depends on it or employer shares are held", "Pivot plan"),
+        ("Inside each group", "risk budgeting, budgets in proportion to the Sharpe ratios of the Black-Litterman "
+                              "expected returns, with a floor", "Risk budgeting, Black-Litterman"),
+        ("Expected returns", "Black-Litterman, prior from the global market portfolio", "Doeswijk and Swinkels (2024); MSCI"),
+        ("Your market view", f"counts fully today, fades out over {ALLOC['view_years']} years in the plan by age, "
+                             "not used in the backtest", "Group choice"),
+        ("Risk", "Ledoit-Wolf shrinkage of the covariance", "Ledoit-Wolf"),
         ("Loss limit", f"bad year = 1 in {1 / (1 - ALLOC['loss_confidence']):.0f}; accepted loss "
-                       f"{T.pct(prof['loss_tolerance'])} of the savings plus what can still be saved", "LN6 (Gaussian VaR)"),
-        ("Employer shares", f"industry return plus {T.pct(ALLOC['stake_idio_vol'])} company-specific volatility",
-         "Assumption"),
-        ("Industries", "12 Fama-French industry portfolios, in CHF", "Kenneth French data library"),
-        ("Prior of Black-Litterman", "Doeswijk and Swinkels (2024) shares; equities by MSCI World sectors, Sep 2026",
-         "LN4"),
-        ("Salary growth", T.pct(c["salary_growth"], 1) + " a year", "Assumption"),
-        ("Savings", f"{T.pct(params['backtest']['savings_rate'])} of the gross salary", "Assumption"),
-        ("Trading costs", f"{params['backtest']['transaction_cost_bp']} bp of turnover", "Proposal"),
-        ("Rebalancing (backtest)", f"plan solved every {ALLOC['rebalance_months']} months, "
-                                   f"window {params['backtest']['window_months']} months", "Proposal"),
+                       f"{L.pct(prof['loss_tolerance'])} of the savings plus what can still be saved",
+         "Gaussian value at risk"),
+        ("Backtest", f"{params['backtest']['window_months']}-month windows, rebalanced every "
+                     f"{ALLOC['rebalance_months']} months, {params['backtest']['transaction_cost_bp']} bp costs, "
+                     f"saving {L.pct(params['backtest']['savings_rate'])} of the salary", "Proposal, step 4"),
     ]
-    html(T.table(pd.DataFrame(rows, columns=["Assumption", "Value", "Source"]).set_index("Assumption")))
-    html('<p class="btp-foot">Every value lives in config/params.yaml. Data: Yahoo Finance, Kenneth French, FRED and '
-         "the Swiss National Bank, monthly in CHF. Beyond the Portfolio is a student project (HEC Lausanne, "
-         "Quantitative Asset and Risk Management II), not financial advice.</p>")
+    html('<div class="v3-sub">Assumptions</div>')
+    html(L.table(pd.DataFrame(assumptions, columns=["Assumption", "Value", "Source"]).set_index("Assumption")))
+
+html('<p class="v3-foot">Every value lives in config/params.yaml. Data: Yahoo Finance, Kenneth French, FRED and the Swiss '
+     "National Bank, monthly in CHF. Beyond the Portfolio is a student project (HEC Lausanne, Quantitative Asset and "
+     "Risk Management II), not financial advice.</p>")
 
 
 # =============================================================================

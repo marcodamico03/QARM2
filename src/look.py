@@ -69,6 +69,8 @@ html, body, .stApp :is(div, p, span, label, input, textarea, button, li, td, th,
 .v3-brand {{ display: flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 0.95rem; white-space: nowrap;
   letter-spacing: -0.01em; color: {c['text']}; margin: 0.2rem 0 0.4rem; }}
 .v3-dot {{ width: 14px; height: 14px; border-radius: 50%; background: conic-gradient({c['career']} 0 70%, {c['pension']} 0 85%, {c['ours']} 0); }}
+.st-key-theme_switch {{ display: flex; justify-content: flex-end; }}
+.st-key-theme_switch label p {{ color: {c['muted']}; font-size: 0.85rem; }}
 .v3-kicker {{ font-size: 0.82rem; font-weight: 500; color: {c['muted']}; letter-spacing: 0.01em; margin-bottom: 0.35rem; }}
 .v3-title {{ font-size: clamp(1.7rem, 3.2vw, 2.55rem); line-height: 1.08; font-weight: 700; letter-spacing: -0.025em;
   color: {c['text']}; margin: 0 0 0.6rem; }}

@@ -13,6 +13,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import src.allocation as AL
+from src import look as L
 import src.backtest as B
 import src.dashboard as D
 import src.optimizer as O
@@ -153,6 +154,21 @@ def test_allocation():
     # civil servant: no industry left out, no stake
     r = AL.analyze(AL.client_params("civil_servant", None, base), data)
     assert r["plans"]["C"]["detail"]["excluded"] == [] and not r["plans"]["C"]["detail"]["locked"]
+    # a market view counts today, fades out in the plan by age, and the backtest never sees it
+    view = {"asset": "IND_BUSEQ", "q": 0.15, "sd": 0.02}
+    pv = AL.client_params("civil_servant", {"view": view}, base)
+    rv = AL.analyze(pv, data)
+    assert rv["mu"]["IND_BUSEQ"] > rv["mu_prior"]["IND_BUSEQ"] + 0.02
+    plain = AL.analyze(AL.client_params("civil_servant", None, base), data)
+    assert np.allclose(rv["mu_prior"], plain["mu"])
+    assert rv["plans"]["C"]["weights"]["IND_BUSEQ"] > plain["plans"]["C"]["weights"]["IND_BUSEQ"]
+    gv = AL.glide_path(pv, rv["mu"], rv["cov"], mu_prior=rv["mu_prior"])
+    gp = AL.glide_path(AL.client_params("civil_servant", None, base), plain["mu"], plain["cov"])
+    late = [a for a in gv.index if a - gv.index[0] >= base["allocation"]["view_years"]]
+    groups_c = [c for c in gv.columns if c[0] == "C"]                 # after the fade only the savings path differs
+    assert np.abs(gv.loc[late, groups_c].to_numpy(float) - gp.loc[late, groups_c].to_numpy(float)).max() < 0.01
+    assert D.cache_key("backtest2", AL.without_client_view(pv)) == \
+        D.cache_key("backtest2", AL.client_params("civil_servant", None, base))
     print("allocation (version 2) OK")
 
 
@@ -165,7 +181,61 @@ def test_theme():
     assert T.asset_color("STAKE") == T.SECTOR and T.asset_name("STAKE") == "Your employer shares"
     assert bar.count("flex:") == 3 and "CHF 3.00 m" in bar and "CHF 3.15 m" in bar
     assert "Typical" in T.bar_row("Typical", {"EQ_WORLD": 0.6, "BOND_CHF": 0.4}, labels=False)
+    assert set(T.PALETTES["dark"]) == set(T.PALETTES["light"])       # every colour exists in both modes
+    for mode in ("light", "dark"):
+        T.use(mode)
+        assert T.streamlit_theme()["base"] == mode and T.TEXT == T.PALETTES[mode]["TEXT"]
+        assert "\n\n" not in T.css() and T.asset_color("IND_MONEY") in T.PALETTES[mode]["INDUSTRY_COLORS"]
     print("theme OK")
+
+
+def test_typical_and_fewer_bonds():
+    """Typical advice is the profile's model portfolio (balanced 60/40); our plan starts from the same
+    bonds; (M) has the bonds of our plan but keeps the industry."""
+    data = AL.load_data()
+    for persona in ("banker", "civil_servant"):
+        for profile in ("prudent", "balanced", "dynamic"):
+            p = AL.client_params(persona, {"profile": profile})
+            r = AL.analyze(p, data)
+            gA, gM, gC = (r["plans"][k]["groups"] for k in "AMC")
+            safe = p["allocation"]["profiles"][profile]["safe_share"]
+            assert abs(gA["bonds"] - safe) < 1e-9, (persona, profile, gA["bonds"])
+            assert abs(r["plans"]["C"]["detail"]["safe_share"] - safe * (1 - r["sheet"]["bond_like"])) < 1e-12
+            assert abs(gM["bonds"] - gC["bonds"]) < 1e-9
+            assert gC["bonds"] < gA["bonds"]
+            for k in "AMC":
+                w = r["plans"][k]["weights"]
+                assert abs(w.sum() - 1) < 1e-9 and (w >= 0).all(), k
+    r = AL.analyze(AL.client_params("banker"), data)
+    wM, wC = r["plans"]["M"]["weights"], r["plans"]["C"]["weights"]
+    assert r["plans"]["C"]["detail"]["excluded"] == ["IND_MONEY"] and r["plans"]["M"]["detail"]["excluded"] == []
+    assert abs(wC["IND_MONEY"] - 0.15) < 1e-9 and wM["IND_MONEY"] > 0.15     # (M) buys finance on top of the stake
+    sheet = r["sheet"]
+    assert abs(r["plans"]["C"]["detail"]["safe_share"] - 0.40 * (1 - sheet["bond_like"])) < 1e-12
+    assert load_params()["allocation"]["profiles"]["balanced"]["safe_share"] == 0.40     # balanced = 60/40
+    print("typical advice = model portfolio of the profile, fewer bonds only OK")
+
+
+def test_story_backtest():
+    """The two steps add up to the total gain (all measured with the wealth of typical advice)."""
+    s = AL.backtest_story(AL.client_params("banker"))
+    g = s["gains"]["CE gain (CHF/yr)"]
+    assert abs(g["(M) vs (A)"] + g["(C) vs (M)"] - g["(C) vs (A)"]) < 1e-6 * abs(g["(C) vs (A)"])
+    assert set(s["metrics"].columns) == {"A", "B", "M", "C"} and set(s["values"].columns) == {"A", "B", "M", "C"}
+    assert g["(M) vs (A)"] > 0
+    print(f"story backtest OK: fewer bonds {g['(M) vs (A)']:+,.0f}, no own industry {g['(C) vs (M)']:+,.0f}, "
+          f"total {g['(C) vs (A)']:+,.0f} CHF a year")
+
+
+def test_look():
+    for dark in (False, True):
+        c = L.palette(dark)
+        assert "\n\n" not in L.css(c)                     # a blank line would end the HTML block in Markdown
+        assert L.streamlit_theme(c)["base"] == ("dark" if dark else "light")
+    assert L.signed_chf(3704) == "+CHF 3'704" and L.signed_chf(-85).startswith("−")
+    assert L.chance(0.001) == "more than 99% of replayed histories" and L.chance(0.4) == "60% of replayed histories"
+    assert L.bar(L.LIGHT, "", "", [(0.5, "#000", "a"), (0.5, "#fff", "b")]).startswith('<div class="v3-bar">')
+    print("look OK")
 
 
 def test_app_headless():
@@ -176,7 +246,7 @@ def test_app_headless():
         return
     base = load_params()
     for name in base["personas"]:                             # saved first: the page then never waits
-        D.remember("backtest2", AL.client_params(name, None, base))
+        D.remember("story", AL.client_params(name, None, base))
     at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=240).run()
     assert not at.exception, at.exception
     for name in base["personas"]:                             # every example client
@@ -186,10 +256,17 @@ def test_app_headless():
     at.number_input(key="age_banker").set_value(62).run()
     at.number_input(key="savings_banker").set_value(2_000_000).run()
     assert not at.exception, at.exception
+    at.radio(key="profile_banker").set_value("prudent").run()
+    at.toggle(key="view_on_banker").set_value(True).run()     # a market view: used today, not in the backtest
+    assert not at.exception, at.exception
     at.selectbox(key="industry_banker").set_value(None).run()
     at.toggle(key="self_banker").set_value(True).run()
     assert not at.exception, at.exception
-    print("the app runs for every persona and other settings, OK")
+    at.toggle(key="light").set_value(True).run()              # light page, then back to dark
+    assert not at.exception, at.exception
+    at.toggle(key="light").set_value(False).run()
+    assert not at.exception, at.exception
+    print("the app runs for every persona and other settings, with a view, in light and dark, OK")
 
 
 if __name__ == "__main__":
@@ -199,5 +276,8 @@ if __name__ == "__main__":
     test_saved_results()
     test_allocation()
     test_theme()
+    test_typical_and_fewer_bonds()
+    test_story_backtest()
+    test_look()
     test_app_headless()
     print("ALL TESTS PASSED")
