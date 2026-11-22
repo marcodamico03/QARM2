@@ -41,7 +41,7 @@ from src.optimizer import (EMPLOYER, MONTHS, balance_sheet, build_constraints, c
 
 BP = 10_000
 STRATEGIES = {"A": "(A) standard: career ignored", "B": "(B) 100 - age",
-              "D": "(D) total wealth, no hedge", "C": "(C) total wealth"}
+              "D": "(D) total wealth, no hedge", "C": "(C) total wealth", "M": "(M) fewer bonds only"}
 EQUITY_ASSET = "EQ_WORLD"        # (B) 100 - age: equities in world equities, the rest in the career's bond
 
 
