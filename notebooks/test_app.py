@@ -248,7 +248,7 @@ def test_app_headless():
         return
     base = load_params()
     for name in base["personas"]:                             # saved first: the page then never waits
-        D.remember("backtest2", AL.client_params(name, None, base))
+        D.remember("story", AL.client_params(name, None, base))
     at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=240).run()
     assert not at.exception, at.exception
     for name in base["personas"]:                             # every example client
