@@ -194,6 +194,8 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-barrow.ours > span {{ color: var(--savings); font-weight: 600; }}
 .btp-bar {{ display: flex; height: 30px; border-radius: 9px; overflow: hidden; gap: 2px; }}
 .btp-barrow.typical .btp-bar {{ height: 16px; border-radius: 6px; opacity: .85; }}
+.btp-barrow.groups .btp-bar {{ height: 30px; border-radius: 9px; opacity: 1; }}
+.btp-barrow.groups.typical .btp-bar > div {{ opacity: .7; }}
 .btp-bar > div {{ display: flex; align-items: center; padding: 0 10px; font-size: .78rem; font-weight: 600;
         color: {ON_BAR}; white-space: nowrap; overflow: hidden; min-width: 0; }}
 .btp-hold {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0 22px;
@@ -296,6 +298,20 @@ def bar_row(label, weights, params=None, cls="", min_weight=0.0005, labels=True)
         cells.append(f'<div style="flex:{w:.5f} 1 0;background:{asset_color(asset)}" '
                      f'title="{esc(asset_name(asset, params))}: {pct(w, 1)}">{esc(text)}</div>')
     return f'<div class="btp-barrow {cls}"><span>{esc(label)}</span><div class="btp-bar">{"".join(cells)}</div></div>'
+
+
+def group_bar(label, groups, cls="", min_weight=0.0005):
+    """One portfolio as a bar of its groups only (shares, real assets, bonds, cash), the share inside."""
+    cells = []
+    for g in ("equities", "real", "bonds", "cash"):
+        w = float(groups.get(g, 0.0))
+        if w < min_weight:
+            continue
+        text = pct(w) if w >= 0.07 else ""
+        cells.append(f'<div style="flex:{w:.5f} 1 0;background:{GROUP_COLORS[g]}" '
+                     f'title="{esc(GROUP_NAMES[g])}: {pct(w, 1)}">{esc(text)}</div>')
+    return (f'<div class="btp-barrow groups {cls}"><span>{esc(label)}</span>'
+            f'<div class="btp-bar">{"".join(cells)}</div></div>')
 
 
 def holdings(rows):

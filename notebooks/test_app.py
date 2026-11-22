@@ -181,6 +181,8 @@ def test_theme():
     assert T.asset_color("STAKE") == T.SECTOR and T.asset_name("STAKE") == "Your employer shares"
     assert bar.count("flex:") == 3 and "CHF 3.00 m" in bar and "CHF 3.15 m" in bar
     assert "Typical" in T.bar_row("Typical", {"EQ_WORLD": 0.6, "BOND_CHF": 0.4}, labels=False)
+    bar = T.group_bar("Our plan", {"equities": 0.66, "real": 0.24, "bonds": 0.10, "cash": 0.0})
+    assert bar.count("flex:") == 3 and "66%" in bar and "10%" in bar          # three groups, no cash
     assert set(T.PALETTES["dark"]) == set(T.PALETTES["light"])       # every colour exists in both modes
     for mode in ("light", "dark"):
         T.use(mode)
@@ -246,7 +248,7 @@ def test_app_headless():
         return
     base = load_params()
     for name in base["personas"]:                             # saved first: the page then never waits
-        D.remember("story", AL.client_params(name, None, base))
+        D.remember("backtest2", AL.client_params(name, None, base))
     at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=240).run()
     assert not at.exception, at.exception
     for name in base["personas"]:                             # every example client
@@ -256,7 +258,6 @@ def test_app_headless():
     at.number_input(key="age_banker").set_value(62).run()
     at.number_input(key="savings_banker").set_value(2_000_000).run()
     assert not at.exception, at.exception
-    at.radio(key="profile_banker").set_value("prudent").run()
     at.toggle(key="view_on_banker").set_value(True).run()     # a market view: used today, not in the backtest
     assert not at.exception, at.exception
     at.selectbox(key="industry_banker").set_value(None).run()
@@ -264,8 +265,9 @@ def test_app_headless():
     assert not at.exception, at.exception
     at.toggle(key="light").set_value(True).run()              # light page, then back to dark
     assert not at.exception, at.exception
+    assert T.MODE == "light" and at.session_state["light_mode"]
     at.toggle(key="light").set_value(False).run()
-    assert not at.exception, at.exception
+    assert not at.exception and T.MODE == "dark", at.exception
     print("the app runs for every persona and other settings, with a view, in light and dark, OK")
 
 
