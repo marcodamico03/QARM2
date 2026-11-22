@@ -180,6 +180,11 @@ def test_theme():
     assert T.asset_color("STAKE") == T.SECTOR and T.asset_name("STAKE") == "Your employer shares"
     assert bar.count("flex:") == 3 and "CHF 3.00 m" in bar and "CHF 3.15 m" in bar
     assert "Typical" in T.bar_row("Typical", {"EQ_WORLD": 0.6, "BOND_CHF": 0.4}, labels=False)
+    assert set(T.PALETTES["dark"]) == set(T.PALETTES["light"])       # every colour exists in both modes
+    for mode in ("light", "dark"):
+        T.use(mode)
+        assert T.streamlit_theme()["base"] == mode and T.TEXT == T.PALETTES[mode]["TEXT"]
+        assert "\n\n" not in T.css() and T.asset_color("IND_MONEY") in T.PALETTES[mode]["INDUSTRY_COLORS"]
     print("theme OK")
 
 
@@ -204,7 +209,12 @@ def test_app_headless():
     at.selectbox(key="industry_banker").set_value(None).run()
     at.toggle(key="self_banker").set_value(True).run()
     assert not at.exception, at.exception
-    print("the app runs for every persona and other settings, OK")
+    at.toggle(key="light").set_value(True).run()              # light page, then back to dark
+    assert not at.exception, at.exception
+    assert T.MODE == "light" and T.css().count(T.PALETTES["light"]["BG"]) > 0
+    at.toggle(key="light").set_value(False).run()
+    assert not at.exception and T.MODE == "dark", at.exception
+    print("the app runs for every persona and other settings, in light and dark, OK")
 
 
 if __name__ == "__main__":

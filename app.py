@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit import config
 
 from src import allocation as A
 from src import dashboard as D
@@ -24,12 +25,18 @@ from src import theme as T
 from src.config import load_params
 from src.jobs import Jobs
 
+T.use("light" if st.session_state.get("light", False) else "dark")   # dark unless the switch top right is on
 st.set_page_config(page_title="Beyond the Portfolio", page_icon="◐", layout="wide",
                    initial_sidebar_state="expanded")
+THEME = T.streamlit_theme()
+if any(config.get_option(f"theme.{name}") != value for name, value in THEME.items()):
+    for name, value in THEME.items():                       # Streamlit's own widgets follow the same palette
+        config.set_option(f"theme.{name}", value)
+    st.rerun()
 st.markdown(T.css(), unsafe_allow_html=True)
 CHART_CONFIG = {"displayModeBar": False, "responsive": True}
 NAMES = A.STRATEGIES
-COLORS = {"A": T.TYPICAL, "B": "#A3AEC2", "C": T.SAVINGS}
+COLORS = {"A": T.TYPICAL, "B": T.STRATEGY_B, "C": T.SAVINGS}
 
 
 # =============================================================================
@@ -190,8 +197,12 @@ first_month = market_data()[0].index[int(params["backtest"]["window_months"])]
 # =============================================================================
 # Header
 # =============================================================================
-html(f'<div class="btp-who">{T.esc(ind_name or APP["no_industry"])}, {age} years old, '
-     f'{T.chf(salary, short=False)} a year {T.status(bt is None, "Backtest ready" if bt is not None else "Updating the backtest")}</div>')
+who, switch = st.columns([6, 1], vertical_alignment="center")
+with who:
+    html(f'<div class="btp-who">{T.esc(ind_name or APP["no_industry"])}, {age} years old, '
+         f'{T.chf(salary, short=False)} a year {T.status(bt is None, "Backtest ready" if bt is not None else "Updating the backtest")}</div>')
+with switch.container(key="theme_switch"):
+    st.toggle("Light", key="light", help="Light or dark page")
 parts = [f"{T.pct(gC['equities'])} in shares", f"{T.pct(gC['real'])} in real assets",
          f"{T.pct(gC['bonds'])} in bonds"]
 if gC["cash"] >= APP["min_weight"] * 10:
