@@ -63,7 +63,7 @@ def glide(key):
     persona, changes = json.loads(key)
     params = A.client_params(persona, changes, base_params())
     res = analysis(key)
-    return A.glide_path(params, res["mu"], res["cov"])
+    return A.glide_path(params, res["mu"], res["cov"], mu_prior=res["mu_prior"])
 
 
 def background(name, params):
@@ -160,6 +160,8 @@ with st.sidebar:
             levels = list(APP["view_confidence"])
             confidence = choice("Confidence", levels, levels[len(levels) // 2], "vc" + k)
             view = {"asset": asset, "q": q, "sd": APP["view_confidence"][confidence]}
+            st.caption(f"A view is about the next years: it fades out over {ALLOC['view_years']} years in the "
+                       "plan by age, and the backtest does not use it.")
     html('<p class="btp-side-note">Everything updates as you type. The backtest takes a few seconds the first '
          "time for a new client.</p>")
 
@@ -182,7 +184,7 @@ wC, wA = C_["weights"], A_["weights"]
 gC, gA = C_["groups"], A_["groups"]
 retire = client["retirement_age"]
 ind_name = INDUSTRIES.get(industry, "") if industry else None
-bt = background("backtest2", params)
+bt = background("backtest2", A.without_client_view(params))  # the backtest never uses the client's view
 first_month = market_data()[0].index[int(params["backtest"]["window_months"])]
 
 # =============================================================================
@@ -315,10 +317,10 @@ with left:
         fig.update_yaxes(autorange="reversed")
         show(fig)
         dv = C_["diversification"]
-        html(f'<p class="btp-panel-note">Risk contributions (lab LN5): the share of the ups and downs of your savings '
+        html(f'<p class="btp-panel-note">Risk contributions: the share of the ups and downs of your savings '
              f"that comes from each part. Volatility {T.pct(dv['volatility'], 1)} a year; diversification ratio "
              f"{dv['diversification ratio']:.2f} against {A_['diversification']['diversification ratio']:.2f} "
-             "for typical advice (LN6).</p>")
+             "for typical advice.</p>")
 
 with right:
     with st.container(key="panel_glide"):
@@ -358,10 +360,10 @@ with tabs[0]:
     html(T.table(table, {c: (lambda v: T.chf(v, short=False)) for c in table.columns}))
 
 with tabs[1]:
-    html('<div class="btp-h3">How the plan is built</div><p class="btp-p">Risk budgeting as in lab LN5: every asset '
-         "we buy carries a share of the risk equal to its budget. Between groups the budgets come from your "
-         "risk profile; inside a group they follow the Black-Litterman Sharpe ratios (LN4), with a floor so "
-         "no asset is dropped. Covariance with Ledoit-Wolf shrinkage (LN3).</p>")
+    html('<div class="btp-h3">How the plan is built</div><p class="btp-p">Risk budgeting: every asset we buy '
+         "carries a share of the risk equal to its budget. Between groups the budgets come from your risk "
+         "profile; inside a group they follow the Sharpe ratios of the Black-Litterman expected returns, with a "
+         "floor so no asset is dropped. Covariance with Ledoit-Wolf shrinkage.</p>")
     vol = np.sqrt(np.diag(res["cov"]))
     info = pd.DataFrame({"Market weight (prior)": res["estimates"]["market_weights"],
                          "Expected return above cash": res["mu"], "Volatility": vol,
@@ -432,12 +434,14 @@ with tabs[3]:
          "Career model (step 2)"),
         ("Own industry", "left out when part of the pay depends on it or employer shares are held", "Pivot plan"),
         ("Loss limit", f"bad year = 1 in {1 / (1 - ALLOC['loss_confidence']):.0f}; accepted loss "
-                       f"{T.pct(prof['loss_tolerance'])} of the savings plus what can still be saved", "LN6 (Gaussian VaR)"),
+                       f"{T.pct(prof['loss_tolerance'])} of the savings plus what can still be saved", "Gaussian value at risk"),
         ("Employer shares", f"industry return plus {T.pct(ALLOC['stake_idio_vol'])} company-specific volatility",
          "Assumption"),
         ("Industries", "12 Fama-French industry portfolios, in CHF", "Kenneth French data library"),
         ("Prior of Black-Litterman", "Doeswijk and Swinkels (2024) shares; equities by MSCI World sectors, Sep 2026",
-         "LN4"),
+         "Doeswijk and Swinkels (2024); MSCI"),
+        ("Your market view", f"counts fully today, fades out over {ALLOC['view_years']} years in the plan by age, "
+                             "not used in the backtest", "Group choice"),
         ("Salary growth", T.pct(c["salary_growth"], 1) + " a year", "Assumption"),
         ("Savings", f"{T.pct(params['backtest']['savings_rate'])} of the gross salary", "Assumption"),
         ("Trading costs", f"{params['backtest']['transaction_cost_bp']} bp of turnover", "Proposal"),

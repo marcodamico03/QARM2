@@ -109,8 +109,9 @@ def client_params(persona, changes=None, base=None):
         client["pension_chf"] = "auto" if changes["pension_chf"] in (None, "auto") else float(changes["pension_chf"])
     view = changes.get("view")
     if view:
-        p["black_litterman"]["views"] = [{"assets": {view["asset"]: 1.0}, "q": float(view["q"]),
-                                          "sd": float(view["sd"])}]
+        p["black_litterman"]["views"] = list(p["black_litterman"].get("views") or []) + [
+            {"assets": {view["asset"]: 1.0}, "q": float(view["q"]), "sd": float(view["sd"])}]
+        client["view"] = dict(view)
     industry = client["industry"]
     if industry is None:
         client["variable_pay"], client["stake_chf"] = 0.0, 0.0
@@ -163,6 +164,16 @@ def market_weights(params, names):
     for name in ("BOND_GLB_H", "BOND_CORP", "REIT_CH", "GOLD", "COMMOD"):
         w[name] = float(mw.get(name, 0.0))
     return w / w.sum()
+
+
+def without_client_view(params):
+    """params without the client's own market view (the views of params.yaml stay)."""
+    if not params["client"].get("view"):
+        return params
+    p = copy.deepcopy(params)
+    p["black_litterman"]["views"] = list(p["black_litterman"]["views"])[:-1]
+    p["client"].pop("view", None)
+    return p
 
 
 def estimates(window_excess, params):
@@ -397,10 +408,12 @@ def analyze(params, data=None):
     returns, rf = load_data(params) if data is None else data
     excess = returns.sub(rf, axis=0)
     mu, cov, info = estimates(excess, params)
+    mu_prior = estimates(excess, without_client_view(params))[0] if params["client"].get("view") else mu
     sheet = balance_sheet(params)
     client = params["client"]
     F = float(client["portfolio_chf"])
-    out = {"params": params, "mu": mu, "cov": cov, "estimates": info, "sheet": sheet, "plans": {}, "months": len(excess)}
+    out = {"params": params, "mu": mu, "mu_prior": mu_prior, "cov": cov, "estimates": info, "sheet": sheet,
+           "plans": {}, "months": len(excess)}
     for kind in ("A", "B", "C"):
         w, detail = plan(params, mu, cov, kind, sheet=sheet)
         x = w.drop(CASH)
@@ -417,11 +430,12 @@ def analyze(params, data=None):
 # 5. The plan by age (expected path, no market surprise)
 # =============================================================================
 
-def glide_path(params, mu, cov, step_years=None):
+def glide_path(params, mu, cov, step_years=None, mu_prior=None):
     """Plan (C) and (A) solved again at each age until retirement, with the balance sheet expected
     then: salary grown, pension estimated with the legal rules (or scaled from the certificate),
     savings grown at the plan's expected return plus the savings; the stake grows with its industry
-    and joins the free savings when it unlocks. Returns a DataFrame by age."""
+    and joins the free savings when it unlocks. The client's market view (mu vs mu_prior) fades out
+    linearly over allocation view_years. Returns a DataFrame by age."""
     client, career = params["client"], params["career"]
     step = step_years or params["app"]["glide_step_years"]
     age0, salary0 = float(client["age"]), float(client["salary_chf"])
@@ -434,9 +448,14 @@ def glide_path(params, mu, cov, step_years=None):
     rf = career["rf_long_run"]
     F, stake = float(client["portfolio_chf"]), float(client["stake_chf"])
     industry = client["industry"]
+    mu_prior = mu if mu_prior is None else mu_prior
+    fade = float(params["allocation"].get("view_years", 0)) or 1e-9
+    mu_today = mu
     rows, age = {}, age0
     while age < retire:
         years = age - age0
+        weight = max(0.0, 1.0 - years / fade)               # 1 today, 0 after view_years
+        mu = mu_prior + weight * (mu_today - mu_prior)
         salary = salary0 * (1 + career["salary_growth"]) ** years
         p = copy.deepcopy(params)
         p["client"].update(age=age, salary_chf=salary, portfolio_chf=F,
@@ -473,9 +492,11 @@ def glide_path(params, mu, cov, step_years=None):
 def backtest(params, data=None, strategies=("A", "B", "C")):
     """Walk-forward backtest of (A), (B), (C) with the engine of step 4 (src/backtest.py): each
     decision uses only the past window; the plans are solved again every rebalance_months and kept
-    in between; the stake is held while locked and grows with its industry. Returns the same dict as
+    in between; the stake is held while locked and grows with its industry. The client's market view
+    is not used: it is an opinion of today, unknown in the past. Returns the same dict as
     backtest.run_strategies, so its metric tables work unchanged."""
     from src import backtest as B
+    params = without_client_view(params)
     returns, rf = load_data(params) if data is None else data
     names = list(returns.columns)
     excess = returns.sub(rf, axis=0)

@@ -153,6 +153,21 @@ def test_allocation():
     # civil servant: no industry left out, no stake
     r = AL.analyze(AL.client_params("civil_servant", None, base), data)
     assert r["plans"]["C"]["detail"]["excluded"] == [] and not r["plans"]["C"]["detail"]["locked"]
+    # a market view counts today, fades out in the plan by age, and the backtest never sees it
+    view = {"asset": "IND_BUSEQ", "q": 0.15, "sd": 0.02}
+    pv = AL.client_params("civil_servant", {"view": view}, base)
+    rv = AL.analyze(pv, data)
+    assert rv["mu"]["IND_BUSEQ"] > rv["mu_prior"]["IND_BUSEQ"] + 0.02
+    plain = AL.analyze(AL.client_params("civil_servant", None, base), data)
+    assert np.allclose(rv["mu_prior"], plain["mu"])
+    assert rv["plans"]["C"]["weights"]["IND_BUSEQ"] > plain["plans"]["C"]["weights"]["IND_BUSEQ"]
+    gv = AL.glide_path(pv, rv["mu"], rv["cov"], mu_prior=rv["mu_prior"])
+    gp = AL.glide_path(AL.client_params("civil_servant", None, base), plain["mu"], plain["cov"])
+    late = [a for a in gv.index if a - gv.index[0] >= base["allocation"]["view_years"]]
+    groups_c = [c for c in gv.columns if c[0] == "C"]                 # after the fade only the savings path differs
+    assert np.abs(gv.loc[late, groups_c].to_numpy(float) - gp.loc[late, groups_c].to_numpy(float)).max() < 0.01
+    assert D.cache_key("backtest2", AL.without_client_view(pv)) == \
+        D.cache_key("backtest2", AL.client_params("civil_servant", None, base))
     print("allocation (version 2) OK")
 
 

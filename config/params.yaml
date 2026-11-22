@@ -425,4 +425,7 @@ allocation:
     GOLD: 0.012
     COMMOD: 0.012
   rebalance_months: 3        # backtest: the plan is solved again every 3 months (holdings drift in between)
+  view_years: 3              # a client's market view is an opinion about the next years, not forever: it counts fully
+                             # today, fades to nothing over 3 years in the plan by age, and the backtest never uses
+                             # it (nobody knew it in 2005)
 
