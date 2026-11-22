@@ -36,7 +36,8 @@ Strategies compared in the app and the backtest:
       the gain of (C) over (A) in two: (M) vs (A) is "your job is a bond", (C) vs (M) is "do not bet
       twice on your industry"
   (C) our plan: the four points above
-Typical advice (A) is the classic 60/40 (allocation typical_safe_share), whatever the profile.
+Typical advice (A) is the profile's model portfolio (balanced = 60/40); (C) starts from the same bonds,
+so the gain of (C) over (A) is only the job, never the profile.
 No Streamlit here.
 """
 import copy
@@ -280,13 +281,12 @@ def budgets(params, mu, cov, groups_used, exclude=()):
 
 
 def safe_share(params, kind, sheet):
-    """Share of the savings in bonds: (A) the typical 60/40, 40% (or the profile's safe share if
-    typical_safe_share is not set); (B) age%; (C) and (M) the profile's safe share x (1 - bond-like
-    share of wealth)."""
+    """Share of the savings in bonds: (A) the profile's safe share (its model portfolio, balanced
+    60/40); (B) age%; (C) and (M) the profile's safe share x (1 - bond-like share of wealth)."""
     client = params["client"]
     profile = params["allocation"]["profiles"][client["profile"]]
     if kind == "A":
-        return float(params["allocation"].get("typical_safe_share", profile["safe_share"]))
+        return float(profile["safe_share"])
     if kind == "B":
         return min(max(client["age"] / 100, 0.0), 1.0)
     return float(profile["safe_share"] * min(max(1 - sheet["bond_like"], 0.0), 1.0))
@@ -545,7 +545,7 @@ def backtest_summary(params, data=None):
 
 
 def backtest_story(params, data=None):
-    """The backtest as the page of app_v3 tells it: (A) typical 60/40, (M) fewer bonds only, (C) our plan,
+    """The backtest as the page of app_v3 tells it: (A) typical advice (the profile's model portfolio), (M) fewer bonds only, (C) our plan,
     and (B) 100 minus age for the details. The gain of (C) over (A) is split in two steps that add up:
     (M) vs (A) "your job is a bond" and (C) vs (M) "no second bet on your industry"."""
     from src import backtest as B

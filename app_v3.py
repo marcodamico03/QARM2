@@ -4,7 +4,7 @@ Run from the project folder:
     streamlit run app_v3.py
 
 The client is in the side panel. The page answers, top to bottom:
-    1. What to do with the savings (our plan against the typical 60/40)
+    1. What to do with the savings (our plan against typical advice, the profile's model portfolio)
     2. Why: the client is more than the savings (career, pension, savings)
     3. The two changes from typical advice and what each was worth in the backtest
     4. What the client gives up (more swings in the savings)
@@ -171,7 +171,8 @@ ind_name = INDUSTRIES.get(industry) if industry else None
 ind_short = ind_name.split(" (")[0].lower() if ind_name else ""
 story = background("story", params)
 first_month = market_data()[0].index[int(params["backtest"]["window_months"])]
-typical_bonds = float(ALLOC.get("typical_safe_share", 0.4))
+typical_bonds = float(ALLOC["profiles"][profile]["safe_share"])      # typical advice: the profile's model portfolio
+MIX = f"{1 - typical_bonds:.0%}/{typical_bonds:.0%}".replace("%", "")
 
 # =============================================================================
 # The answer
@@ -182,7 +183,8 @@ parts = [f"{L.pct(gC['equities'])} in shares", f"{L.pct(gC['real'])} in real ass
 if gC["cash"] >= 0.005:
     parts.append(f"{L.pct(gC['cash'])} in cash")
 html(f'<div class="v3-title">Invest your {L.chf(F, short=False)}: <em>{", ".join(parts[:-1])} and {parts[-1]}</em>.</div>')
-lede = (f"Typical advice gives everyone 60% growth and 40% bonds. We start from the same mix and look at "
+lede = (f"Typical advice gives every {profile} investor {L.pct(1 - typical_bonds)} growth and {L.pct(typical_bonds)} "
+        f"bonds. We start from the same mix and look at "
         f"your job: <b>your future salary already works like a bond</b>, so your savings need only "
         f"{L.pct(gC['bonds'])} in bonds")
 lede += f", and <b>no extra {ind_short}</b>, because your pay already depends on it." if excluded else "."
@@ -197,7 +199,7 @@ row1 = st.columns([1.15, 1], gap="medium")
 with row1[0]:
     with st.container(key="card_plan"):
         html(L.heading("1 · Your savings", "Our plan against typical advice"))
-        html(L.bar(C, "Typical", "60/40 for everyone", mix_parts(gA))
+        html(L.bar(C, "Typical", f"{MIX}, {profile} model", mix_parts(gA))
              + L.bar(C, "Our plan", "built around your job", mix_parts(gC)))
         html(L.legend([(L.group_color(C, k), L.GROUPS[k]) for k in ("equities", "real", "bonds")
                        + (("cash",) if gC["cash"] >= 0.005 else ())]))
@@ -245,7 +247,7 @@ with row2[0]:
             g = story["gains"]
             g1, g2, gt = (g.loc[i] for i in ("(M) vs (A)", "(C) vs (M)", "(C) vs (A)"))
             v1, v2, vt = (float(x["CE gain (CHF/yr)"]) for x in (g1, g2, gt))
-            labels = ["Typical 60/40", "Fewer bonds"] + ([f"No extra {ind_short}"] if excluded else []) + ["Our plan"]
+            labels = [f"Typical {MIX}", "Fewer bonds"] + ([f"No extra {ind_short}"] if excluded else []) + ["Our plan"]
             ys = [0, v1] + ([v2] if excluded else []) + [0]
             measures = ["absolute", "relative"] + (["relative"] if excluded else []) + ["total"]
             texts = ["0", L.signed_chf(v1)] + ([L.signed_chf(v2)] if excluded else []) + [L.signed_chf(vt)]
@@ -269,7 +271,9 @@ with row2[0]:
                 html(L.change(2, f"No extra {ind_short}: no second bet on your industry",
                               f"A bad year for {ind_short} already hits your bonus"
                               f"{' and your employer shares' if stake_now > 0 else ''}. Leaving it out lowers the "
-                              "risk but gives up some return: it is insurance, not a source of profit.",
+                              "risk in your industry's worst months: it is insurance, not a source of profit"
+                              + (f", and here its premium is {L.chf(-v2, short=False)} a year." if v2 < 0 else
+                                 ". Here it also happened to earn a little."),
                               L.signed_chf(v2), C["good"] if v2 >= 0 else C["bad"], g2["p-value"] <= 0.05,
                               L.chance(g2["p-value"])))
             html(f'<p class="v3-note">Certainty equivalent on total wealth (gain in return minus the cost of the extra '
@@ -322,7 +326,7 @@ with row3[0]:
                               layer="below")
                 fig.add_annotation(x=x0, y=1.0 - 0.07 * (i % 2), yref="paper", text=SHORT_CRISES.get(crisis, crisis),
                                    showarrow=False, xanchor="left", font=dict(size=9, color=C["faint"]))
-            for s, name, col, width in (("A", "Typical 60/40", C["typical"], 1.8), ("C", "Our plan", C["ours"], 2.6)):
+            for s, name, col, width in (("A", f"Typical {MIX}", C["typical"], 1.8), ("C", "Our plan", C["ours"], 2.6)):
                 fig.add_trace(go.Scatter(x=values.index, y=values[s], name=name, mode="lines",
                                          line=dict(color=col, width=width),
                                          hovertemplate=name + ": CHF %{y:,.0f}<extra></extra>"))
@@ -366,7 +370,7 @@ with row3[1]:
 # Details
 # =============================================================================
 with st.expander("Details: every holding, the full backtest, the assumptions"):
-    names = {"A": "Typical 60/40", "M": "Fewer bonds only", "C": "Our plan", "B": "100 minus age"}
+    names = {"A": f"Typical {MIX}", "M": "Fewer bonds only", "C": "Our plan", "B": "100 minus age"}
     html('<div class="v3-sub">Every holding, in CHF</div>')
     hold = pd.DataFrame({names[s]: plans[s]["weights"] * F for s in ("A", "M", "C", "B")})
     hold = hold[(hold.abs() > 1).any(axis=1)]
@@ -396,8 +400,9 @@ with st.expander("Details: every holding, the full backtest, the assumptions"):
         html(L.table(cr, {c: (lambda v: L.pct(v, 1)) for c in cr.columns}))
     prof = ALLOC["profiles"][profile]
     assumptions = [
-        ("Typical advice", f"{L.pct(1 - typical_bonds)} growth (shares and real assets), {L.pct(typical_bonds)} bonds, "
-                           "for everybody", "Classic 60/40"),
+        ("Typical advice", "the profile's model portfolio, growth (shares and real assets) / bonds: "
+                           + ", ".join(f"{n} {1 - v['safe_share']:.0%}/{v['safe_share']:.0%}".replace("%", "")
+                                       for n, v in ALLOC["profiles"].items()), "Bank model portfolios"),
         ("Bonds in our plan", f"{L.pct(prof['safe_share'])} ({profile}) × (1 − share of wealth that works like a bond)",
          "Total wealth, steps 2 and 3"),
         ("Works like a bond", "bond beta of the career × career value + pension", "Career model, step 2"),

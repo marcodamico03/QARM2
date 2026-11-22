@@ -16,14 +16,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def test_typical_and_fewer_bonds():
-    """Typical advice is 60/40 for everybody; (M) has the bonds of our plan but keeps the industry."""
+    """Typical advice is the profile's model portfolio (balanced 60/40); our plan starts from the same
+    bonds; (M) has the bonds of our plan but keeps the industry."""
     data = AL.load_data()
     for persona in ("banker", "civil_servant"):
         for profile in ("prudent", "balanced", "dynamic"):
             p = AL.client_params(persona, {"profile": profile})
             r = AL.analyze(p, data)
             gA, gM, gC = (r["plans"][k]["groups"] for k in "AMC")
-            assert abs(gA["bonds"] - 0.40) < 1e-9, (persona, profile, gA["bonds"])
+            safe = p["allocation"]["profiles"][profile]["safe_share"]
+            assert abs(gA["bonds"] - safe) < 1e-9, (persona, profile, gA["bonds"])
+            assert abs(r["plans"]["C"]["detail"]["safe_share"] - safe * (1 - r["sheet"]["bond_like"])) < 1e-12
             assert abs(gM["bonds"] - gC["bonds"]) < 1e-9
             assert gC["bonds"] < gA["bonds"]
             for k in "AMC":
@@ -35,7 +38,8 @@ def test_typical_and_fewer_bonds():
     assert abs(wC["IND_MONEY"] - 0.15) < 1e-9 and wM["IND_MONEY"] > 0.15     # (M) buys finance on top of the stake
     sheet = r["sheet"]
     assert abs(r["plans"]["C"]["detail"]["safe_share"] - 0.40 * (1 - sheet["bond_like"])) < 1e-12
-    print("typical 60/40 and fewer bonds only OK")
+    assert load_params()["allocation"]["profiles"]["balanced"]["safe_share"] == 0.40     # balanced = 60/40
+    print("typical advice = model portfolio of the profile, fewer bonds only OK")
 
 
 def test_story_backtest():
