@@ -31,7 +31,14 @@ from src.jobs import Jobs
 # =============================================================================
 # Light or dark: Streamlit's own theme follows the switch (it applies on the next run, hence the rerun)
 # =============================================================================
-DARK = not st.session_state.get("light", False)            # dark unless the switch top right is on
+DARK = not st.session_state.get("light_mode", False)       # dark unless the switch top right is on
+
+
+def keep_light():
+    """The switch is kept in its own key: on older Streamlit the rerun below would lose the widget's value."""
+    st.session_state["light_mode"] = st.session_state["light"]
+
+
 C = L.palette(DARK)
 _theme = L.streamlit_theme(C)
 if any(config.get_option(f"theme.{k}") != v for k, v in _theme.items()):
@@ -195,7 +202,7 @@ head, switch = st.columns([6, 1], vertical_alignment="center")
 with head:
     html(f'<div class="v3-kicker">{L.esc(who)}</div>')
 with switch.container(key="theme_switch"):
-    st.toggle("Light", key="light", help="Light or dark page")
+    st.toggle("Light", value=not DARK, key="light", on_change=keep_light, help="Light or dark page")
 parts = [f"{L.pct(gC['equities'])} in shares", f"{L.pct(gC['real'])} in real assets", f"{L.pct(gC['bonds'])} in bonds"]
 if gC["cash"] >= 0.005:
     parts.append(f"{L.pct(gC['cash'])} in cash")
