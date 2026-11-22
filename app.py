@@ -239,6 +239,28 @@ with row1[0]:
         if gC["cash"] >= 0.005:
             items.append(("Cash", "close to retirement: the loss limit", L.chf(gC["cash"] * F, short=False)))
         html(L.rows(items))
+        reasons = []                                           # why the plan looks like this (Marco's version 2)
+        if excluded:
+            depend = ([f"{L.pct(client['variable_pay'])} of your pay"] if client["variable_pay"] > 0 else []) + \
+                     (["your employer shares"] if client["stake_chf"] > 0 else [])
+            reasons.append((C["industry"], f"<b>No {L.esc(ind_short)} in the rest.</b> "
+                                           f"{' and '.join(depend).capitalize()} already depend on it: a bad year there "
+                                           "would hit you twice."))
+        if dC["locked"]:
+            reasons.append((C["industry"], f"<b>Your employer shares stay {unlock:.0f} more year"
+                                           f"{'s' if unlock != 1 else ''}.</b> The rest is built around them; then they "
+                                           "join the plan."))
+        reasons.append((C["bonds"], f"<b>Your job works like a bond.</b> So {L.pct(gC['bonds'])} in bonds, "
+                                    f"not {L.pct(gA['bonds'])}."))
+        bad_year = f"1 in {1 / (1 - ALLOC['loss_confidence']):.0f}"
+        if dC["cash_from_loss_limit"] > 0:
+            reasons.append((C["ours"], f"<b>Close to retirement.</b> A bad year ({bad_year}) could cost more than you "
+                                       f"can still save, so {L.pct(dC['cash_from_loss_limit'])} goes to cash."))
+        elif dC.get("loss") is not None:
+            reasons.append((C["ours"], f"<b>A bad year ({bad_year}) costs about {L.chf(dC['loss'])}.</b> Within your "
+                                       f"{profile} profile, with {L.chf(dC['savings_left'])} still to save before "
+                                       "retiring."))
+        html(L.why(reasons))
 
 with row1[1]:
     with st.container(key="card_wealth"):
@@ -325,9 +347,7 @@ with row2[1]:
             html(f'<p class="v3-p" style="margin-top:0.6rem"><b>Your savings will move more.</b> You are paid for it '
                  f"(step 3), and your salary, which keeps coming in a crash, absorbs it: everything you own "
                  f"swings almost as little as before.</p>")
-            if dC.get("loss") is not None and dC["cash_from_loss_limit"] == 0:
-                html(f'<p class="v3-note">A bad year (1 in 20) would cost your savings about {L.chf(dC["loss"])} today, '
-                     f"within your {profile} profile.</p>")
+
 
 # =============================================================================
 # The past and the future

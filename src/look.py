@@ -95,6 +95,11 @@ html, body, .stApp :is(div, p, span, label, input, textarea, button, li, td, th,
   border-bottom: 1px solid {c['line']}; font-size: 0.88rem; color: {c['text']}; align-items: baseline; }}
 .v3-li span {{ color: {c['muted']}; font-variant-numeric: tabular-nums; }}
 .v3-li b {{ font-weight: 600; font-variant-numeric: tabular-nums; }}
+.v3-why {{ margin: 1rem 0 0.2rem; display: grid; gap: 0.6rem; }}
+.stApp .v3-why > div {{ display: grid; grid-template-columns: 3px minmax(0, 1fr); gap: 0.75rem; font-size: 0.86rem;
+  line-height: 1.45; color: {c['muted']}; }}
+.v3-why i {{ border-radius: 3px; }}
+.v3-why b {{ color: {c['text']}; font-weight: 600; }}
 .v3-big {{ font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; color: {c['text']}; font-variant-numeric: tabular-nums; }}
 .v3-tiles {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 0.7rem; margin: 0.3rem 0 0.4rem; }}
 .v3-tile {{ background: {c['raised']}; border-radius: 13px; padding: 0.8rem 0.9rem; min-width: 0; }}
@@ -162,6 +167,12 @@ def rows(items):
                                              for name, detail, value in items) + "</div>"
 
 
+def why(items):
+    """The reasons behind the plan, one per line: [(colour, html text)] (bold lead, then the reason)."""
+    return '<div class="v3-why">' + "".join(f'<div><i style="background:{col}"></i><span>{text}</span></div>'
+                                            for col, text in items) + "</div>"
+
+
 def tiles(items):
     """[(label, value, sub)]"""
     return '<div class="v3-tiles">' + "".join(
@@ -219,4 +230,4 @@ def plot_layout(c, height, **extra):
 
 
 __all__ = ["chf", "pct", "palette", "streamlit_theme", "css", "brand", "heading", "bar", "legend", "rows",
-           "tiles", "change", "waiting", "table", "signed_chf", "chance", "plot_layout", "GROUPS", "group_color"]
+           "tiles", "why", "change", "waiting", "table", "signed_chf", "chance", "plot_layout", "GROUPS", "group_color"]
