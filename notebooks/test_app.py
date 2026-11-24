@@ -13,7 +13,6 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import src.allocation as AL
-from src import look as L
 import src.backtest as B
 import src.dashboard as D
 import src.optimizer as O
@@ -229,17 +228,6 @@ def test_story_backtest():
           f"total {g['(C) vs (A)']:+,.0f} CHF a year")
 
 
-def test_look():
-    for dark in (False, True):
-        c = L.palette(dark)
-        assert "\n\n" not in L.css(c)                     # a blank line would end the HTML block in Markdown
-        assert L.streamlit_theme(c)["base"] == ("dark" if dark else "light")
-    assert L.signed_chf(3704) == "+CHF 3'704" and L.signed_chf(-85).startswith("−")
-    assert L.chance(0.001) == "more than 99% of replayed histories" and L.chance(0.4) == "60% of replayed histories"
-    assert L.bar(L.LIGHT, "", "", [(0.5, "#000", "a"), (0.5, "#fff", "b")]).startswith('<div class="v3-bar">')
-    print("look OK")
-
-
 def test_app_headless():
     try:
         from streamlit.testing.v1 import AppTest
@@ -280,6 +268,5 @@ if __name__ == "__main__":
     test_theme()
     test_typical_and_fewer_bonds()
     test_story_backtest()
-    test_look()
     test_app_headless()
     print("ALL TESTS PASSED")

@@ -353,8 +353,6 @@ app:
   salary_step: 5000
   savings_range: [5000, 10000000]
   savings_step: 5000
-  pension_max: 3000000
-  pension_step: 5000
   shares_step: 1000
   # "How much does your pay follow your industry?": multiplier of the persona's beta_sector
   # (the same range as the wrong-beta test of the backtest)
