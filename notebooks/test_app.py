@@ -243,6 +243,13 @@ def test_app_headless():
         at.selectbox(key="job").set_value(name).run()
         assert not at.exception, (name, at.exception)
     at.selectbox(key="job").set_value("banker").run()
+    field = [n for n in at.number_input if n.key and n.key.startswith("pension_banker_")]
+    p0 = AL.client_params("banker", None, base)
+    estimate = round(O.pension_savings(p0["client"]["age"], p0["client"]["salary_chf"], p0), -3)
+    assert len(field) == 1 and field[0].value == estimate        # the estimate is the starting value of the field
+    field[0].set_value(estimate + 400_000).run()                 # the client corrects it from the certificate
+    assert not at.exception, at.exception
+    assert [n.value for n in at.number_input if n.key == field[0].key] == [estimate + 400_000]
     at.number_input(key="age_banker").set_value(62).run()
     at.number_input(key="savings_banker").set_value(2_000_000).run()
     assert not at.exception, at.exception

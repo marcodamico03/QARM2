@@ -338,6 +338,8 @@ app:
   no_industry: "Public sector, or pay not linked to an industry"
   variable_pay_step: 0.05
   unlock_max_years: 10
+  pension_max: 3000000        # pension fund savings field: upper bound and step, CHF
+  pension_step: 5000
   sector_words:              # the client's sector in a sentence ("when ... do badly")
     BANKS_EU: "European banks"
     SEC_FIN: "financial companies"

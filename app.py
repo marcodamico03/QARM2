@@ -19,6 +19,7 @@ from streamlit import config
 
 from src import allocation as A
 from src import dashboard as D
+from src import optimizer as O
 from src import theme as T
 from src.config import load_params
 from src.jobs import Jobs
@@ -153,7 +154,12 @@ with st.sidebar:
                              format="%.2f")
     self_employed = st.toggle("I am self-employed (no pension fund)", value=not p.get("pillar2", True),
                               key="self" + k)
-    pension = None                                         # pension fund savings estimated from age and salary
+    pension = None
+    if not self_employed:                                  # estimated from age and salary; the client can correct it
+        estimate = O.pension_savings(age, salary, A.client_params(persona, None, P0))
+        pension = st.number_input("Pension fund savings, CHF", 0, APP["pension_max"], int(round(estimate, -3)),
+                                  APP["pension_step"], key=f"pension{k}_{age}_{salary}",
+                                  help="Our estimate from your age and salary; put the amount on your certificate.")
     profiles = list(ALLOC["profiles"])
     profile = choice("Risk profile", profiles, ALLOC["default_profile"], "profile" + k, format_func=str.capitalize)
     with st.expander("Advanced"):
