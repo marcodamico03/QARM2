@@ -1,0 +1,15 @@
+# Keeps the app private to this computer.
+[server]
+address = "localhost"        # only this computer can open the app (no "Network URL")
+headless = true              # no first-run email prompt; open the "Local URL" it prints
+
+[browser]
+gatherUsageStats = false     # do not send usage statistics to Streamlit
+serverAddress = "localhost"
+
+[theme]
+base = "light"
+primaryColor = "#1f4e79"
+
+[client]
+toolbarMode = "minimal"      # hides the "Deploy" button: nothing can be published from the app
