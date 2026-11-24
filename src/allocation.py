@@ -41,6 +41,7 @@ so the gain of (C) over (A) is only the job, never the profile.
 No Streamlit here.
 """
 import copy
+import math
 
 import numpy as np
 import pandas as pd
@@ -206,28 +207,42 @@ def risk_budget_amounts(cov, budgets, fixed, total, sweeps=200, tol=1e-10):
 
     cov: annual covariance (DataFrame); budgets, fixed: Series on the same assets (CHF for fixed).
     Cyclical coordinate descent on 1/2 e'Sigma e - lambda sum b ln y: each coordinate solves
-    Sigma_ii y^2 + c_i y - lambda b_i = 0, c_i = sum_{j != i} Sigma_ij e_j. lambda by bisection."""
+    Sigma_ii y^2 + c_i y - lambda b_i = 0, c_i = sum_{j != i} Sigma_ij e_j.
+    Without a fixed holding the condition is homogeneous (if y solves it for lambda, t y solves it for
+    t^2 lambda), so one solve rescaled to the total is the answer; with one, lambda by bisection."""
     names = list(cov.columns)
     S = cov.to_numpy()
     b = budgets.reindex(names).fillna(0.0).to_numpy()
     f = fixed.reindex(names).fillna(0.0).to_numpy()
-    buy = b > 0
-    if total <= 0 or not buy.any():
+    buy = np.flatnonzero(b > 0)
+    if total <= 0 or not len(buy):
         return pd.Series(0.0, index=names)
     diag = np.diag(S)
+    columns = np.ascontiguousarray(S.T)                        # column i of Sigma, read as a row
+    limit = tol * max(total, 1.0)
 
     def solve(lam, y):
         for _ in range(sweeps):
-            previous = y.copy()
-            for i in np.flatnonzero(buy):
-                e = y + f
-                c = S[i] @ e - S[i, i] * y[i]
-                y[i] = (-c + np.sqrt(c * c + 4 * diag[i] * lam * b[i])) / (2 * diag[i])
-            if np.abs(y - previous).sum() <= tol * max(total, 1.0):
+            g = S @ (y + f)                                    # Sigma e, kept up to date after each coordinate
+            moved = 0.0
+            for i in buy:
+                c = g[i] - diag[i] * y[i]
+                new = (-c + math.sqrt(c * c + 4 * diag[i] * lam * b[i])) / (2 * diag[i])
+                step = new - y[i]
+                if step:
+                    y[i] = new
+                    g += columns[i] * step
+                    moved += abs(step)
+            if moved <= limit:
                 break
         return y
 
-    y = np.where(buy, total / buy.sum(), 0.0)
+    y = np.zeros(len(names))
+    y[buy] = total / len(buy)
+    if not f.any():
+        lam = float(y @ S @ y) / b[buy].sum()                  # lambda = y' Sigma y / sum b at the solution
+        y = solve(lam, y)
+        return pd.Series(y * total / y.sum(), index=names)
     scale = float(total) ** 2 * np.mean(diag[buy])           # lambda has units of CHF^2 x variance
     low, high = 1e-12 * scale, 1e3 * scale
     for _ in range(100):
@@ -277,18 +292,21 @@ def budgets(params, mu, cov, groups_used, exclude=()):
     (bonds alone: 1), inside a group in proportion to the Black-Litterman Sharpe ratios with a floor."""
     alloc = params["allocation"]
     profile = alloc["profiles"][params["client"]["profile"]]
-    sharpe = mu / np.sqrt(np.diag(cov))
-    b = pd.Series(0.0, index=list(cov.columns))
+    names = list(cov.columns)
+    where = {a: i for i, a in enumerate(names)}
+    sharpe = np.asarray(mu, dtype=float) / np.sqrt(np.diag(cov.to_numpy()))   # numpy: called at every rebalance
+    b = np.zeros(len(names))
     for group in groups_used:
-        members = [m for m in alloc["groups"][group] if m not in exclude and m in b.index]
+        members = [where[m] for m in alloc["groups"][group] if m not in exclude and m in where]
         share = profile.get(group, 1.0) if len(groups_used) > 1 else 1.0
         if share <= 0 or not members:
             continue
-        s = sharpe[members].clip(lower=0)
+        s = sharpe[members].clip(min=0)
         floor = alloc["sharpe_floor"] * max(s.mean(), 1e-12)
-        s = s.clip(lower=floor)
+        s = s.clip(min=floor)
         b[members] = share * s / s.sum()
-    return b / b.sum() if b.sum() > 0 else b
+    total = b.sum()
+    return pd.Series(b / total if total > 0 else b, index=names)
 
 
 def safe_share(params, kind, sheet):
@@ -355,10 +373,12 @@ def plan(params, mu, cov, kind="C", stake_value=None, months_from_now=0.0, sheet
         free = w.copy()
         if locked:
             free[industry] -= stake / F
+        S, m = cov.to_numpy(), mu.reindex(names).to_numpy()       # numpy: loss() runs 60 times per plan
+        free_x, held_x = free.to_numpy(), (w - free).to_numpy()
 
         def loss(scale):
-            x = free * scale + (w - free)
-            return F * (z * np.sqrt(x @ cov.to_numpy() @ x + idio) - x @ mu)
+            x = free_x * scale + held_x
+            return F * (z * np.sqrt(x @ S @ x + idio) - x @ m)
 
         if loss(1.0) > allowed:
             low, high = 0.0, 1.0
@@ -532,9 +552,9 @@ def backtest(params, data=None, strategies=("A", "B", "C")):
             if date not in cache:
                 cache[date] = estimates(window_excess[names], params)
             mu, cov, _ = cache[date]
-            p = copy.deepcopy(params)
-            p["client"].update(age=float(client["age"]), salary_chf=float(client["salary"]), portfolio_chf=value,
-                               pension_chf=float(client["P_start"]))
+            p = {**params, "client": {**params["client"], "age": float(client["age"]),   # plan() only reads p
+                                      "salary_chf": float(client["salary"]), "portfolio_chf": value,
+                                      "pension_chf": float(client["P_start"])}}
             H, P = float(client["H_start"]), float(client["P_start"])
             W = H + P + value
             sheet = {"H": H, "P": P, "F": value, "W": W, "bond_like": (client["beta_bond"] * H + P) / W}
