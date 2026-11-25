@@ -1,11 +1,11 @@
-"""Tests of src/optimizer.py with known answers (contract, section 6).
+"""Tests of src/optimizer.py with known answers.
 
 Reference values come from the labs (LN4, LN5), from closed-form solutions and from
 independent checks (an exact solution by enumeration, finite differences, the formulas
 of Ledoit and Wolf written with loops).
 
 Run from the project folder:
-    python notebooks/test_optimizer.py
+    python tests/test_optimizer.py
 """
 import copy
 import itertools
@@ -189,7 +189,7 @@ def test_lab_QP_when_omega_is_zero():
 # -----------------------------------------------------------------------------
 
 def test_unconstrained_equals_formula():
-    # Contract, section 6: without constraints optimal_portfolio = the formula of section 1.2
+    # Known answer: without constraints optimal_portfolio = the closed-form formula
     mu, cov, sigma_H, exposure = random_problem()
     gamma = 0.3
     for omega in (0.0, 0.3, 0.9, 0.97):
@@ -197,7 +197,7 @@ def test_unconstrained_equals_formula():
         formula = (gamma / (1 - omega) * np.linalg.solve(cov, mu)
                    - omega / (1 - omega) * np.linalg.solve(cov, sigma_H))
         assert np.allclose(x, formula, rtol=1e-10, atol=1e-10), omega
-        # Proposal 3.2: the hedging demand is -omega/(1-omega) x (beta_bond e_B + beta_sector e_S)
+        # Known answer: the hedging demand is -omega/(1-omega) x (beta_bond e_B + beta_sector e_S)
         _, _, hedging = O.unconstrained_portfolio(mu, cov, sigma_H, omega, gamma)
         assert np.allclose(hedging, -omega / (1 - omega) * exposure, atol=1e-10)
     print("unconstrained = formula OK")

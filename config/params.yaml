@@ -1,7 +1,6 @@
-# Shared parameter file.
-# Every module reads its settings from here, so the three phases and the
-# backtest always use the same assumptions. Values marked TODO are placeholders
-# to be decided by the group.
+# Every parameter and assumption of the project.
+# Every module reads its settings from here, so the app, the model and the
+# backtest always use the same assumptions.
 
 data:
   start_date: "2000-01-01"   # early start so 2008 is out-of-sample (first 60-month window ends ~2005)
@@ -12,7 +11,7 @@ data:
   warn_abs_monthly_return: 0.40         # report: asset months above this are printed for a manual check
 
   # ---------------------------------------------------------------------------
-  # Investable universe (CONTRACT.md, section 2: the keys are the column names).
+  # Version 1 investable universe (the keys are the column names).
   # Each asset has an ordered list of sources. The FIRST source has priority
   # wherever it has data; the next sources only fill the months it is missing
   # (before it starts, after it ends, or a month removed by the cleaning).
@@ -107,7 +106,7 @@ data:
         - {type: kf_industry, file: "49_Industry_Portfolios", column: "BldMt", currency: USD}
 
   # ---------------------------------------------------------------------------
-  # Version 2 universe (docs/pivot plan): world equities split into the 12 Fama-French
+  # Version 2 universe (the one the app uses): world equities split into the 12 Fama-French
   # industries, so the client's own industry can be left out, plus corporate bonds and
   # commodities as diversifiers. Saved in data/universe2_chf.csv (load_universe2_returns).
   # Industries: value-weighted US portfolios (Kenneth French), converted to CHF.
@@ -172,7 +171,7 @@ data:
         - {type: yahoo, tickers: ["GSG"], currency: USD}                   # iShares S&P GSCI Commodity (from 2006)
         - {type: yahoo, tickers: ["^SPGSCI"], currency: USD}               # S&P GSCI index, before the ETF
 
-  # Which asset plays which role in the career model (proposal, section 3.1)
+  # Which asset plays which role in the career model
   career_bond_asset: "BOND_CHF"     # R_B
   career_sector_asset: "BANKS_EU"   # R_S of the default client (each persona has its own, see personas)
 
@@ -201,7 +200,7 @@ client:                      # default persona: the Zurich banker
 # (BANKS_EU or a column of the sector menu; null = no sector exposure).
 # beta_sector is an assumption (wages have no market price, so it cannot be estimated from
 # the client's own data): small values on purpose, because overestimating it is costly
-# and underestimating it is not (proposal, section 4.2). pillar2 = false for self-employed.
+# and underestimating it is not. pillar2 = false for self-employed.
 # deferred_shares_chf: employer shares under lock-up (only the banker: the employer stock is UBS).
 # Version 2 (src/allocation.py): industry = the client's Fama-French industry (null = none),
 # variable_pay = share of pay that moves with the industry (bonus, business income), stake_chf = shares
@@ -216,7 +215,7 @@ personas:
   energy_worker:    {label: "Energy sector employee",  age: 35, salary_chf: 110000, sector: "SEC_ENERGY", beta_sector: 0.15, pillar2: true, industry: "IND_ENRGY", variable_pay: 0.20, stake_chf: 25000, unlock_years: 3}
   civil_servant:    {label: "Civil servant",           age: 35, salary_chf: 100000, sector: null,         beta_sector: 0.00, pillar2: true, industry: null, variable_pay: 0.0, stake_chf: 0, unlock_years: 0}
 
-# Career model (proposal, section 3.1):
+# Career model:
 #   career excess return = beta_bond x (BOND_CHF - rf) + beta_sector x (BANKS_EU - rf) + noise
 #   H = present value of the remaining salary until retirement
 career:
@@ -227,7 +226,7 @@ career:
                              # 0 = salary treated as a fixed nominal bond (civil servant looks riskier than the
                              # banker, unrealistic); 1 = no interest-rate risk at all. Group choice, slider in the app.
   beta_sector: 0.15          # how much the career moves with the sector. Conservative on purpose:
-                             # overestimating it is costly, underestimating it is not (proposal, section 4.2)
+                             # overestimating it is costly, underestimating it is not
   bond_duration: 9.0         # modified duration of the bond index R_B (BOND_CHF = 7-15y CHF government bonds)
   salary_growth: 0.015       # nominal salary growth per year
   rf_long_run: 0.01          # long-run CHF risk-free rate used to discount the salary (annual)
@@ -241,7 +240,7 @@ career:
 # 2nd pillar (BVG/LPP), used when client.pension_chf is "auto": savings built with the legal
 # minimum rules from start_age until today, with past salaries scaled back by salary_growth.
 # The account is credited at a guaranteed rate, so the pension has no market risk: it enlarges
-# omega, the non-tradable share of wealth, but adds no hedging demand (proposal, section 3.2).
+# omega, the non-tradable share of wealth, but adds no hedging demand.
 pension:
   start_age: 25                       # age credits start at 25 (BVG, art. 16)
   age_credits: {25: 0.07, 35: 0.10, 45: 0.15, 55: 0.18}   # % of the coordinated salary from each age on (BVG, art. 16)
@@ -249,7 +248,7 @@ pension:
   max_insured_salary: 90720           # CHF, upper limit of the mandatory salary, 2025-2026 (BSV key figures)
   interest_rate: 0.0125               # BVG minimum interest rate 2024-2026 (BSV); raised to 2.0% from 2027
 
-# Optimizer (proposal, section 3.2). gamma = risk TOLERANCE, lab convention (contract, section 1.2):
+# Optimizer. gamma = risk TOLERANCE, lab convention:
 #   minimise 0.5 x Var(R_W) - gamma x E(R_W)   on total wealth W = H + P + F
 optimization:
   gamma: auto                # "auto" = calibrated once with fsolve (as in lab LN1): a client with no career and no
@@ -258,14 +257,14 @@ optimization:
   covariance: ledoit_wolf    # "ledoit_wolf" (shrinkage to constant correlation, LN3) or "sample"
   long_only: true            # x >= 0
   max_leverage: 1.0          # 1'x <= 1: no borrowing, the rest of the portfolio is cash. null = no limit
-  # Diversification caps (proposal 3.2, "sector caps"): at most 10% of the portfolio in one sector or one
+  # Diversification caps ("sector caps"): at most 10% of the portfolio in one sector or one
   # stock. Without them a young client, who is almost risk-neutral on a portfolio that is 3% of his wealth,
   # puts everything in the single asset with the highest expected return (corner solution). The lock-up
   # can be above the cap: the deferred shares are held, never bought.
   position_caps: {BANKS_EU: 0.10, EMPLOYER: 0.10, SEC_FIN: 0.10, SEC_TECH: 0.10, SEC_HEALTH: 0.10,
                   SEC_INDU: 0.10, SEC_CONS: 0.10, SEC_STAPLES: 0.10, SEC_ENERGY: 0.10, SEC_MATERIALS: 0.10}
 
-# Expected returns: Black-Litterman as in lab LN4 (contract, section 1.3)
+# Expected returns: Black-Litterman as in lab LN4
 #   prior: pi = phi x Sigma x w_mkt, with phi = sharpe_ratio / volatility of w_mkt (the MARKET's risk aversion)
 #   views: P mu = Q + e, e ~ N(0, Omega), prior uncertainty Gamma = tau x Sigma
 black_litterman:
@@ -282,7 +281,7 @@ black_litterman:
                              #   - {assets: {EQ_CH: 1.0}, q: 0.05, sd: 0.10}                   Swiss equities earn 5% over cash
                              #   - {assets: {EQ_CH: 1.0, EQ_WORLD: -1.0}, q: 0.01, sd: 0.05}   Swiss beat world equities by 1%
 
-# Backtest (proposal, section 4): the client of params (the banker, 35 at the start) followed month
+# Backtest: the client of params (the banker, 35 at the start) followed month
 # by month, each strategy decided with the past window only.
 backtest:
   window_months: 60          # estimation window: the first decision (Sep 2005) uses Sep 2000 - Aug 2005
@@ -290,9 +289,9 @@ backtest:
   savings_rate: 0.10         # share of the gross salary added to the portfolio each month (assumption, slider)
   job_loss_months: 12        # job-loss variant: months without salary after the job is lost
   job_loss_thresholds: [0.20, 0.30, 0.40]   # the job is lost when the client's sector falls this much below its
-                                            # peak (30% central value, proposal 4.2); none in the main backtest
-  wrong_beta_multipliers: [0.0, 0.5, 1.0, 1.5, 2.0]   # true beta_sector = multiplier x assumed (proposal 4.2)
-  hedge_map_portfolios: [100000, 300000, 1000000, 3000000]   # hedge map (from Roberto's version): starting
+                                            # peak (30% central value); none in the main backtest
+  wrong_beta_multipliers: [0.0, 0.5, 1.0, 1.5, 2.0]   # true beta_sector = multiplier x assumed
+  hedge_map_portfolios: [100000, 300000, 1000000, 3000000]   # hedge map: starting
   hedge_map_betas: [0.15, 0.30, 0.60]                         # portfolio x beta_sector, both known to the adviser
   worst_months_share: 0.10   # "bad months" = the worst 10% months of the sector part of the career
   bootstrap_block: 12        # circular block bootstrap: blocks of 12 months (crises last several months)
@@ -306,7 +305,7 @@ backtest:
     "2022 rates and inflation": ["2022-01", "2022-09"]
     "Credit Suisse 2023": ["2023-03", "2023-03"]
   # Robustness of the prior: a Swiss pension-fund neutral portfolio instead of the global market
-  # portfolio. Pictet LPP-40 (2015 family) mapped onto our assets as in Roberto's stage 3.3: CHF bonds 30,
+  # portfolio. Pictet LPP-40 (2015 family) mapped onto our assets: CHF bonds 30,
   # hedged world bonds 10 + euro corporates 5, Swiss equities 15, global equities 20 + small caps 5 (of
   # which banks 2.5), Swiss real estate 5; emerging bonds and hedge funds (no asset) removed. In %, rescaled.
   swiss_prior: {BOND_CHF: 30.0, BOND_GLB_H: 15.0, EQ_CH: 15.0, EQ_WORLD: 22.5, BANKS_EU: 2.5, REIT_CH: 5.0}
@@ -338,6 +337,8 @@ app:
   no_industry: "Public sector, or pay not linked to an industry"
   variable_pay_step: 0.05
   unlock_max_years: 10
+  pension_max: 3000000        # pension fund savings field: upper bound and step, CHF
+  pension_step: 5000
   sector_words:              # the client's sector in a sentence ("when ... do badly")
     BANKS_EU: "European banks"
     SEC_FIN: "financial companies"
@@ -353,8 +354,6 @@ app:
   salary_step: 5000
   savings_range: [5000, 10000000]
   savings_step: 5000
-  pension_max: 3000000
-  pension_step: 5000
   shares_step: 1000
   # "How much does your pay follow your industry?": multiplier of the persona's beta_sector
   # (the same range as the wrong-beta test of the backtest)
@@ -375,7 +374,7 @@ app:
   view_default: 0.05
   view_confidence: {Low: 0.10, Medium: 0.05, High: 0.02}   # sd of the view
 
-# Version 2 allocation (src/allocation.py, docs pivot plan): risk budgeting on the savings (LN5-LN6),
+# Version 2 allocation (src/allocation.py): risk budgeting on the savings (LN5-LN6),
 # with the client's stake fixed, the own industry left out, bonds reduced by the bond-like part of
 # wealth (career and pension), and a loss limit before retirement.
 allocation:
@@ -384,7 +383,7 @@ allocation:
                IND_SHOPS, IND_HLTH, IND_MONEY, IND_OTHER, EQ_CH]
     real: [REIT_CH, GOLD, COMMOD]
     bonds: [BOND_CHF, BOND_GLB_H, BOND_CORP]
-  # Risk profile (a first proposal for the group to discuss):
+  # Risk profile:
   #   safe_share: share of the savings in bonds for a client whose wealth is only savings. Our plan (C)
   #     multiplies it by (1 - bond-like share of wealth): the career's bond part and the pension already
   #     are safe. Typical advice (A) uses it as it is.

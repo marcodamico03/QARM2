@@ -1,4 +1,4 @@
-"""Backtest engine (proposal, section 4; contract, section 3).
+"""Backtest engine.
 
 The question: would a client who followed the total-wealth portfolio have been better off
 than one who followed a standard portfolio, and for which reason?
@@ -21,8 +21,7 @@ than one who followed a standard portfolio, and for which reason?
 
 Fair comparison. With its own wealth path, a strategy that became richer has a smaller
 career share later, a result of past luck rather than of the decision. So strategies are
-compared with the SAME wealth shares, those of a reference strategy (an idea of Roberto's
-version): the excess return of total wealth of strategy x is
+compared with the SAME wealth shares, those of a reference strategy: the excess return of total wealth of strategy x is
     R_W(x) = (F/W) (r_x - rf) + (H/W) career return + (P/W) pension excess return
 with F, H, P, W of the reference. Gains over (A) then add up: (C)-(A) = ((C)-(D)) + ((D)-(A)).
 
@@ -57,11 +56,11 @@ def load_backtest_data(start=None, end=None):
 
 
 # =============================================================================
-# 2. The walk-forward engine (contract)
+# 2. The walk-forward engine
 # =============================================================================
 
 def run_backtest(returns, rf, strategy, params, path=None, initial_value=None):
-    """Walk-forward backtest of one strategy (contract, section 3).
+    """Walk-forward backtest of one strategy.
 
     returns:  DataFrame of monthly CHF returns (total, not excess) of the assets, month-end dates
     rf:       Series of the monthly CHF risk-free rate, same dates
@@ -148,7 +147,7 @@ def career_state(age, salary, params):
 
 
 def client_path(params, excess_returns, rf, start, beta_sector=None, job_loss_threshold=None):
-    """The client month by month from `start` (proposal, section 4.1).
+    """The client month by month from `start`.
 
     excess_returns: monthly excess returns with the career's bond and sector assets (all the
                     data: the sector's peak for the job-loss rule can be older than start)
@@ -243,7 +242,7 @@ def client_path(params, excess_returns, rf, start, beta_sector=None, job_loss_th
 # =============================================================================
 
 def make_strategies(params, gamma, assets):
-    """The four strategies as functions for run_backtest (proposal, section 4.1).
+    """The four strategies as functions for run_backtest.
 
     (A), (D), (C) solve the total-wealth problem of the optimizer each month with the inputs of the
     past window (computed once per month and shared) and the client's balance sheet at the start
@@ -316,7 +315,7 @@ def run_strategies(params=None, data=None, strategies=("A", "B", "D", "C"), job_
 
 
 # =============================================================================
-# 5. Metrics (proposal, section 4.1)
+# 5. Metrics
 # =============================================================================
 
 def total_wealth_excess(result, path, reference=None):
@@ -409,7 +408,7 @@ def gain_table(run, pairs=(("B", "A"), ("D", "A"), ("C", "A"), ("C", "D")), refe
 
 
 def metrics_table(run, reference="A"):
-    """One row per strategy (proposal, section 4.1). Total wealth and the CHF metrics use the
+    """One row per strategy. Total wealth and the CHF metrics use the
     reference's wealth (fair comparison); the own-path columns describe what the strategy became."""
     results, path, gamma, bt = run["results"], run["path"], run["gamma"], run["params"]["backtest"]
     ref = results[reference]
@@ -444,7 +443,7 @@ def metrics_table(run, reference="A"):
 
 
 def crisis_table(run, reference="A"):
-    """CHF result of each strategy in each crisis (proposal 4.1: computed, never assumed):
+    """CHF result of each strategy in each crisis (computed, never assumed):
     the portfolio's return over the crisis, its CHF result on the reference's portfolio and the
     CHF change of total wealth (reference's shares, market part only)."""
     results, path, bt = run["results"], run["path"], run["params"]["backtest"]
@@ -464,7 +463,7 @@ def crisis_table(run, reference="A"):
 
 
 # =============================================================================
-# 6. Robustness (proposal, section 4.2)
+# 6. Robustness
 # =============================================================================
 
 def wrong_beta_curve(params=None, data=None, run=None):
@@ -474,7 +473,7 @@ def wrong_beta_curve(params=None, data=None, run=None):
     with a TRUE beta_sector = multiplier x assumed, and the fair gain of (C) over (D) (same shares,
     those of (D)) is measured, with its return and risk parts and a bootstrap p-value.
 
-    Theory (proposal 4.2): a hedge h against a true exposure beta saves variance
+    Theory: a hedge h against a true exposure beta saves variance
     beta^2 - (beta - h)^2 = h (2 beta - h): a straight line in beta, zero at beta = h / 2. With the
     decisions fixed, the risk part is linear in the true beta here too (the career's sector part
     enters total wealth linearly); the slope and the break-even are reported."""
@@ -506,7 +505,7 @@ def wrong_beta_curve(params=None, data=None, run=None):
 
 
 def job_loss_table(params=None, data=None):
-    """The backtest with the job-loss variant (proposal 4.1-4.2): thresholds from params
+    """The backtest with the job-loss variant: thresholds from params
     (20%, 30%, 40%) and none. For each: when the job was lost, the fair gains, and the CHF result
     of each portfolio from each job loss to the end of the unemployment."""
     if params is None:
@@ -559,7 +558,7 @@ def prior_sensitivity(params=None, data=None):
 
 
 def hedge_map(params=None, data=None):
-    """When does the hedge matter? (idea and design from Roberto's version.) The hedge (C) vs (D) for
+    """When does the hedge matter? The hedge (C) vs (D) for
     other clients: starting portfolio x beta_sector (params backtest hedge_map_*); here the adviser
     knows the true beta. For each: the fair gain (shares of (D)) split into return and risk parts,
     the p-value, total-wealth volatility of (D) and (C), and how much less of the sector (C) holds."""

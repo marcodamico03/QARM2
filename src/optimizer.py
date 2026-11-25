@@ -1,4 +1,4 @@
-"""Optimization engine (proposal, section 3.2; contract, sections 1.2, 1.3 and 3).
+"""Optimization engine.
 
 The optimizer chooses only the financial portfolio F, but judges it on total wealth
 W = H + P + F: human capital H (the career), pension savings P and the portfolio F.
@@ -12,7 +12,7 @@ Every block reuses a course lab, with the lab's notation:
     shadow prices     KKT multipliers of the binding constraints             LN1
     risk              Euler risk contributions, on total wealth              LN5
 
-Total-wealth problem (contract, section 1.2). omega = (H + P) / W is the share of wealth
+Total-wealth problem. omega = (H + P) / W is the share of wealth
 that cannot be traded, x the weights of the risky assets in the portfolio (the rest,
 1 - 1'x, is cash at the CHF risk-free rate), R the monthly excess returns, R_NT the
 return of the non-tradable wealth and sigma_H = Cov(R, R_NT):
@@ -28,10 +28,10 @@ With omega = 0 this is exactly the QP of the labs. The pension is credited at a
 guaranteed rate, so it has no market risk: it enlarges omega but adds no hedging demand,
 and omega x sigma_H = omega_H x Cov(R, R_career).
 
-Units: monthly excess returns inside (contract, section 1.4); annual numbers only in the
+Units: monthly excess returns inside; annual numbers only in the
 tables for the app. gamma and phi are the same with monthly or annual data.
 
-Contract functions:
+Main functions:
     bl_expected_returns(cov, w_mkt, phi, P, Q, omega_views, tau)  -> ndarray
     optimal_portfolio(mu, cov, sigma_H, omega, gamma, constraints) -> ndarray
     risk_contributions(x, cov)                                      -> ndarray
@@ -53,10 +53,10 @@ from scipy.optimize import Bounds, LinearConstraint, brentq, fsolve, minimize
 from src.career import career_betas, career_covariance, human_capital, params_for_persona
 from src.config import load_params
 
-MONTHS = 12               # monthly data: mean x 12, variance x 12, volatility x sqrt(12) (contract, 1.4)
+MONTHS = 12               # monthly data: mean x 12, variance x 12, volatility x sqrt(12)
 BP = 10_000               # basis points in 1
 PERCENT_POINT = 0.01      # marginal shadow prices are quoted for 1 percentage point of the portfolio
-EMPLOYER = "EMPLOYER"     # column of the employer stock (contract, section 2)
+EMPLOYER = "EMPLOYER"     # column of the employer stock
 CASH, CAREER, PENSION = "CASH", "CAREER", "PENSION"
 STRATEGIES = {"A": "(A) standard: career ignored",
               "D": "(D) total wealth, no hedge",
@@ -134,7 +134,7 @@ def estimate_covariance(returns, params=None):
 
 def implied_risk_aversion(cov, w_mkt, sharpe_ratio):
     """phi = SR(w_mkt) / sigma(w_mkt): the risk aversion that makes w_mkt optimal (LN4, slide 6).
-    It is the MARKET's risk aversion, used only to build the prior (contract, 1.3)."""
+    It is the MARKET's risk aversion, used only to build the prior."""
     return sharpe_ratio / np.sqrt(w_mkt @ cov @ w_mkt)
 
 
@@ -150,7 +150,7 @@ def gamma_matrix(cov, tau):
 
 
 def bl_expected_returns(cov, w_mkt, phi, P, Q, omega_views, tau):
-    """Black-Litterman expected excess returns (contract; lab LN4):
+    """Black-Litterman expected excess returns (lab LN4):
 
         mu_bar = pi + Gamma P' (P Gamma P' + Omega)^-1 (Q - P pi)
 
@@ -238,7 +238,7 @@ def total_wealth_QP(x, cov, mu, sigma_H, omega, gamma):
 
 
 def unconstrained_portfolio(mu, cov, sigma_H, omega, gamma):
-    """Solution without any constraint (contract, 1.2), split in its two demands.
+    """Solution without any constraint, split in its two demands.
     Returns (total, speculative, hedging), weights in the portfolio (1 = 100% of F)."""
     mu, cov, sigma_H = (np.asarray(a, dtype=float) for a in (mu, cov, sigma_H))
     speculative = gamma / (1 - omega) * np.linalg.solve(cov, mu)
@@ -254,7 +254,7 @@ def no_constraints(n):
 
 
 def build_constraints(assets, params=None, lockup=0.0):
-    """The client's constraints (proposal, section 3.2), from params['optimization']:
+    """The client's constraints, from params['optimization']:
 
         long_only      x >= 0
         max_leverage   1'x <= max_leverage (1 = no borrowing; the rest is cash)
@@ -420,7 +420,7 @@ def solve_portfolio(mu, cov, sigma_H, omega, gamma, constraints=None):
 
 
 def optimal_portfolio(mu, cov, sigma_H, omega, gamma, constraints=None):
-    """Contract function: weights of the risky assets in the portfolio (ndarray; the rest,
+    """Weights of the risky assets in the portfolio (ndarray; the rest,
     1 - sum, is cash). mu, cov: monthly excess returns; sigma_H = Cov(R, R_NT); omega = share
     of wealth that cannot be traded; gamma = risk tolerance; constraints from
     build_constraints (None = no constraint)."""
@@ -428,7 +428,7 @@ def optimal_portfolio(mu, cov, sigma_H, omega, gamma, constraints=None):
 
 
 def strategy_portfolios(mu, cov, sigma_H, omega, gamma, constraints):
-    """The strategies of the backtest (proposal, section 4.1), same gamma, returns and constraints:
+    """The strategies of the backtest, same gamma, returns and constraints:
         (A) standard MVO, the career is ignored     omega = 0
         (D) total wealth without the hedging term   sigma_H = 0
         (C) total wealth                            the full problem
@@ -492,7 +492,7 @@ def calibrate_gamma(mu, cov, benchmark_weights, constraints):
 def risk_tolerance(params, excess_returns):
     """gamma from params: a number, or "auto" = calibrated on the standard universe (the core
     assets without the employer stock) with the standard constraints (no lock-up). So every
-    client and every strategy shares the same gamma (proposal, section 3.2).
+    client and every strategy shares the same gamma.
     Returns (gamma, dict with the target volatility and the calibrated portfolio)."""
     opt = params["optimization"]
     core = [name for name in params["data"]["assets"] if name != EMPLOYER]
@@ -543,7 +543,7 @@ def _without(constraints, group):
 
 
 def shadow_prices(mu, cov, sigma_H, omega, gamma, constraints, wealth, portfolio):
-    """What the constraints cost the client (proposal, section 3.2), two ways:
+    """What the constraints cost the client, two ways:
 
     marginal: the KKT multiplier lambda of each binding constraint. total_wealth_QP is
         -gamma x CE, so 1 more unit of room raises the certainty equivalent by lambda / gamma
@@ -611,7 +611,7 @@ def shadow_prices(mu, cov, sigma_H, omega, gamma, constraints, wealth, portfolio
 # =============================================================================
 
 def risk_contributions(x, cov):
-    """Contract function: absolute risk contributions RC_i = x_i (Sigma x)_i / sqrt(x'Sigma x)
+    """Absolute risk contributions RC_i = x_i (Sigma x)_i / sqrt(x'Sigma x)
     (lab LN5). They add up to the volatility; divided by it they are the relative ones."""
     x, cov = np.asarray(x, dtype=float), np.asarray(cov, dtype=float)
     vol = np.sqrt(x @ cov @ x)
@@ -621,7 +621,7 @@ def risk_contributions(x, cov):
 
 
 def total_wealth_risk_contributions(x, cov, sigma_career, career_var, omega_H, omega_P, assets):
-    """ "How much of your risk is your job?" (proposal, section 2).
+    """ "How much of your risk is your job?".
 
     Total wealth is a portfolio of the assets (weights (1 - omega) x), the career (weight
     omega_H) and the pension (weight omega_P, no market risk). The LN5 formula is applied to
@@ -697,7 +697,7 @@ def balance_sheet(params=None):
 
 
 def client_assets(params=None):
-    """The client's universe (contract, section 2): the core assets, without the employer
+    """The client's universe: the core assets, without the employer
     stock if the client holds no deferred shares, plus the client's sector if it comes from
     the sector menu."""
     if params is None:
@@ -818,7 +818,7 @@ def analyze_client(params=None, excess_returns=None, start=None, end=None):
 
 
 def personas_summary(params=None, excess_returns=None):
-    """One line per persona: balance sheet and the two effects of the proposal (section 4.1):
+    """One line per persona: balance sheet and the two effects of version 1:
     (A) -> (D) "your job is bond-like, so you can take more risk" (fewer bonds),
     (D) -> (C) "avoid your own sector" (the hedge), with the gains in CHF per year."""
     if params is None:

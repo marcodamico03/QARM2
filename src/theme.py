@@ -194,6 +194,8 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-barrow.ours > span {{ color: var(--savings); font-weight: 600; }}
 .btp-bar {{ display: flex; height: 30px; border-radius: 9px; overflow: hidden; gap: 2px; }}
 .btp-barrow.typical .btp-bar {{ height: 16px; border-radius: 6px; opacity: .85; }}
+.btp-barrow.groups .btp-bar {{ height: 30px; border-radius: 9px; opacity: 1; }}
+.btp-barrow.groups.typical .btp-bar > div {{ opacity: .7; }}
 .btp-bar > div {{ display: flex; align-items: center; padding: 0 10px; font-size: .78rem; font-weight: 600;
         color: {ON_BAR}; white-space: nowrap; overflow: hidden; min-width: 0; }}
 .btp-hold {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0 22px;
@@ -208,6 +210,16 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-why > div > i {{ border-radius: 3px; }}
 .btp-why b {{ color: var(--text); font-weight: 600; }}
 /* small numbers under a chart */
+.btp-change {{ display: grid; grid-template-columns: 26px 1fr auto; gap: 12px; padding: 12px 0 10px;
+  border-top: 1px solid var(--line); align-items: start; }}
+.btp-change > i {{ font-style: normal; width: 24px; height: 24px; border-radius: 50%; background: var(--raised);
+  color: var(--muted); font-size: .78rem; font-weight: 600; display: flex; align-items: center; justify-content: center; }}
+.btp-change b {{ color: var(--text); font-size: .92rem; }}
+.btp-change p {{ color: var(--muted); font-size: .84rem; line-height: 1.45; margin: .2rem 0 .45rem; }}
+.btp-change > strong {{ font-size: 1.02rem; font-weight: 700; white-space: nowrap; }}
+.btp-tag {{ display: inline-block; font-size: .74rem; padding: 2px 9px; border-radius: 999px; background: var(--raised);
+  color: var(--muted); }}
+.btp-tag.good {{ color: var(--good); }}
 .btp-stats {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 6px 0 4px; }}
 .btp-stat b {{ display: block; font-size: 1.25rem; font-weight: 700; letter-spacing: -0.015em;
         font-variant-numeric: tabular-nums; white-space: nowrap; }}
@@ -296,6 +308,37 @@ def bar_row(label, weights, params=None, cls="", min_weight=0.0005, labels=True)
         cells.append(f'<div style="flex:{w:.5f} 1 0;background:{asset_color(asset)}" '
                      f'title="{esc(asset_name(asset, params))}: {pct(w, 1)}">{esc(text)}</div>')
     return f'<div class="btp-barrow {cls}"><span>{esc(label)}</span><div class="btp-bar">{"".join(cells)}</div></div>'
+
+
+def group_bar(label, groups, cls="", min_weight=0.0005):
+    """One portfolio as a bar of its groups only (shares, real assets, bonds, cash), the share inside."""
+    cells = []
+    for g in ("equities", "real", "bonds", "cash"):
+        w = float(groups.get(g, 0.0))
+        if w < min_weight:
+            continue
+        text = pct(w) if w >= 0.07 else ""
+        cells.append(f'<div style="flex:{w:.5f} 1 0;background:{GROUP_COLORS[g]}" '
+                     f'title="{esc(GROUP_NAMES[g])}: {pct(w, 1)}">{esc(text)}</div>')
+    return (f'<div class="btp-barrow groups {cls}"><span>{esc(label)}</span>'
+            f'<div class="btp-bar">{"".join(cells)}</div></div>')
+
+
+def change(number, title, text, value, colour, reliable, helped):
+    """One step of the gain: number, title, explanation, CHF a year, and how often it helped in the bootstrap."""
+    tag = (f'<span class="btp-tag good">Reliable: it helped in {esc(helped)}</span>' if reliable
+           else f'<span class="btp-tag">Not proven: it helped in {esc(helped)}</span>')
+    return (f'<div class="btp-change"><i>{number}</i><div><b>{esc(title)}</b><p>{text}</p>{tag}</div>'
+            f'<strong style="color:{colour}">{esc(value)}</strong></div>')
+
+
+def helped(p):
+    """The bootstrap p-value (share of replayed histories where the change did not help) in plain words."""
+    return "more than 99% of replayed histories" if 1 - p > 0.99 else f"{1 - p:.0%} of replayed histories"
+
+
+def signed_chf(x):
+    return ("+" if x >= 0 else "") + chf(x, short=False)
 
 
 def holdings(rows):

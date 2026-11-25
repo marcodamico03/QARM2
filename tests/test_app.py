@@ -3,7 +3,7 @@ background jobs, then the app itself, run headless with Streamlit's own test too
 persona, other settings).
 
 Run from the project folder (about two minutes the first time, then the backtests are saved):
-    python notebooks/test_app.py
+    python tests/test_app.py
 """
 import os
 import sys
@@ -13,7 +13,6 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import src.allocation as AL
-from src import look as L
 import src.backtest as B
 import src.dashboard as D
 import src.optimizer as O
@@ -181,6 +180,8 @@ def test_theme():
     assert T.asset_color("STAKE") == T.SECTOR and T.asset_name("STAKE") == "Your employer shares"
     assert bar.count("flex:") == 3 and "CHF 3.00 m" in bar and "CHF 3.15 m" in bar
     assert "Typical" in T.bar_row("Typical", {"EQ_WORLD": 0.6, "BOND_CHF": 0.4}, labels=False)
+    bar = T.group_bar("Our plan", {"equities": 0.66, "real": 0.24, "bonds": 0.10, "cash": 0.0})
+    assert bar.count("flex:") == 3 and "66%" in bar and "10%" in bar          # three groups, no cash
     assert set(T.PALETTES["dark"]) == set(T.PALETTES["light"])       # every colour exists in both modes
     for mode in ("light", "dark"):
         T.use(mode)
@@ -227,17 +228,6 @@ def test_story_backtest():
           f"total {g['(C) vs (A)']:+,.0f} CHF a year")
 
 
-def test_look():
-    for dark in (False, True):
-        c = L.palette(dark)
-        assert "\n\n" not in L.css(c)                     # a blank line would end the HTML block in Markdown
-        assert L.streamlit_theme(c)["base"] == ("dark" if dark else "light")
-    assert L.signed_chf(3704) == "+CHF 3'704" and L.signed_chf(-85).startswith("−")
-    assert L.chance(0.001) == "more than 99% of replayed histories" and L.chance(0.4) == "60% of replayed histories"
-    assert L.bar(L.LIGHT, "", "", [(0.5, "#000", "a"), (0.5, "#fff", "b")]).startswith('<div class="v3-bar">')
-    print("look OK")
-
-
 def test_app_headless():
     try:
         from streamlit.testing.v1 import AppTest
@@ -253,10 +243,16 @@ def test_app_headless():
         at.selectbox(key="job").set_value(name).run()
         assert not at.exception, (name, at.exception)
     at.selectbox(key="job").set_value("banker").run()
+    field = [n for n in at.number_input if n.key and n.key.startswith("pension_banker_")]
+    p0 = AL.client_params("banker", None, base)
+    estimate = round(O.pension_savings(p0["client"]["age"], p0["client"]["salary_chf"], p0), -3)
+    assert len(field) == 1 and field[0].value == estimate        # the estimate is the starting value of the field
+    field[0].set_value(estimate + 400_000).run()                 # the client corrects it from the certificate
+    assert not at.exception, at.exception
+    assert [n.value for n in at.number_input if n.key == field[0].key] == [estimate + 400_000]
     at.number_input(key="age_banker").set_value(62).run()
     at.number_input(key="savings_banker").set_value(2_000_000).run()
     assert not at.exception, at.exception
-    at.radio(key="profile_banker").set_value("prudent").run()
     at.toggle(key="view_on_banker").set_value(True).run()     # a market view: used today, not in the backtest
     assert not at.exception, at.exception
     at.selectbox(key="industry_banker").set_value(None).run()
@@ -264,8 +260,9 @@ def test_app_headless():
     assert not at.exception, at.exception
     at.toggle(key="light").set_value(True).run()              # light page, then back to dark
     assert not at.exception, at.exception
+    assert T.MODE == "light" and at.session_state["light_mode"]
     at.toggle(key="light").set_value(False).run()
-    assert not at.exception, at.exception
+    assert not at.exception and T.MODE == "dark", at.exception
     print("the app runs for every persona and other settings, with a view, in light and dark, OK")
 
 
@@ -278,6 +275,5 @@ if __name__ == "__main__":
     test_theme()
     test_typical_and_fewer_bonds()
     test_story_backtest()
-    test_look()
     test_app_headless()
     print("ALL TESTS PASSED")

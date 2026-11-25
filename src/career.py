@@ -1,4 +1,4 @@
-"""Career model (proposal, section 3.1; contract, section 3).
+"""Career model.
 
 The client's career is treated as a non-tradable asset with two parts:
 
@@ -18,7 +18,7 @@ rise too. wage_rate_link (0 to 1) is the share of rate moves that salaries follo
 With wage_rate_link = 0 every career looks like a long nominal bond, and the safest careers
 (civil servant) look riskier than the banker. It falls with age and is 0 at retirement.
 
-Contract functions:
+Main functions:
     career_return(bond_ret, sector_ret, beta_bond, beta_sector)  -> Series
     human_capital(age, salary, params)                           -> float (CHF)
 Helpers used by the optimizer, the backtest and the app:
@@ -61,7 +61,7 @@ def params_for_persona(params, name):
 
 
 # =============================================================================
-# 1. Contract: career return
+# 1. Career return
 # =============================================================================
 
 def career_return(bond_ret, sector_ret, beta_bond, beta_sector):
@@ -144,7 +144,7 @@ def career_betas(age, params):
 
 
 # =============================================================================
-# 3. Contract: value of human capital
+# 3. Value of human capital
 # =============================================================================
 
 def human_capital(age, salary, params=None):
@@ -165,7 +165,7 @@ def human_capital(age, salary, params=None):
 
 def career_covariance(cov, beta_bond, beta_sector, params=None):
     """sigma_H = Cov(R, R_H): covariance of each asset with the career, aligned
-    with the columns of cov (a DataFrame with the contract asset names).
+    with the columns of cov (a DataFrame with the project's asset names).
 
     Because the career is beta_bond x R_B + beta_sector x R_S + noise, and the noise is
     uncorrelated with the assets: sigma_H = beta_bond x Sigma[:, B] + beta_sector x Sigma[:, S].

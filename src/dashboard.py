@@ -1,6 +1,6 @@
 """Numbers for the app (step 5), computed with the modules of steps 1 to 4.
 
-No Streamlit here, so everything can be tested (notebooks/test_app.py). app.py only lays out
+No Streamlit here, so everything can be tested (tests/test_app.py). app.py only lays out
 what these functions return.
 """
 import copy
@@ -236,7 +236,7 @@ def _signature():
     """Changes when the code of the model or the saved data change (then results are recomputed)."""
     h = hashlib.sha256()
     for f in sorted((ROOT / "src").glob("*.py")):
-        if f.name not in ("theme.py", "look.py", "jobs.py", "precompute.py"):
+        if f.name not in ("theme.py", "jobs.py", "precompute.py"):
             h.update(f.name.encode() + f.read_bytes())
     for f in sorted((ROOT / "data").glob("*.csv")):
         h.update(f"{f.name}{f.stat().st_size}{f.stat().st_mtime_ns}".encode())

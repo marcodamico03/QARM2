@@ -1,12 +1,12 @@
-"""Data layer (follows docs/CONTRACT.md).
+"""Data layer (step 1).
 
 Downloads prices and rates, cleans them, converts all returns to CHF,
 and saves copies in data/ so the app keeps working if a website is down.
 
-Functions of the contract (section 3):
+Main functions:
 
     from src.data import load_returns, load_rf
-    returns = load_returns("2000-01-01", "2026-12-31")   # DataFrame, monthly CHF returns, contract column names
+    returns = load_returns("2000-01-01", "2026-12-31")   # DataFrame, monthly CHF returns, the project's column names
     rf = load_rf("2000-01-01", "2026-12-31")             # Series RF_CHF, monthly CHF risk-free rate
 
 Both read the saved files in data/ (fast, works offline).
@@ -192,7 +192,7 @@ def build_fx(params):
 
 
 def build_rf(params):
-    """CHF risk-free rate as a monthly return (contract name RF_CHF).
+    """CHF risk-free rate as a monthly return (column RF_CHF).
     The rate observed at the end of month t-1 is the return earned during month t.
     Negative rates are kept as they are. Also returns the annual % level (for the hedge carry)."""
     spec = params["data"]["rates"]["RF_CHF"]

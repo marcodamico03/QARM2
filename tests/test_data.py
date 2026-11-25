@@ -1,10 +1,10 @@
-"""Tests of src/data.py with known answers (CONTRACT.md, section 6).
+"""Tests of src/data.py with known answers.
 
 Runs offline: the downloads are replaced by fake data, so it checks the logic
 (parsing, CHF conversion, bond formula, hedging, splicing, cleaning, saving),
 not the websites. Run from the project folder:
 
-    python notebooks/test_data.py
+    python tests/test_data.py
 """
 import os
 import sys
@@ -132,7 +132,7 @@ def test_pipeline():
             warnings.simplefilter("ignore")
             returns, rf = D.update_data(params, verbose=False)
 
-        # contract: names, index, no holes, decimals
+        # names, index, no holes, decimals
         assert list(returns.columns) == CONTRACT_COLUMNS, returns.columns
         assert returns.index.name == "date" and rf.name == "RF_CHF"
         assert returns.notna().all().all() and rf.notna().all()

@@ -1,7 +1,7 @@
-"""Tests of src/career.py with known answers (contract, section 6).
+"""Tests of src/career.py with known answers.
 
 Run from the project folder:
-    python notebooks/test_career.py
+    python tests/test_career.py
 """
 import copy
 import os
@@ -95,7 +95,7 @@ def test_wage_rate_link():
 
 
 def test_career_covariance():
-    # Known answer (proposal 3.2): inv(Sigma) sigma_H = beta_bond x e_B + beta_sector x e_S
+    # Known answer: inv(Sigma) sigma_H = beta_bond x e_B + beta_sector x e_S
     p = load_params()
     names = ["EQ_WORLD", "BANKS_EU", "BOND_CHF", "GOLD"]
     rng = np.random.default_rng(1)

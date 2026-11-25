@@ -1,12 +1,8 @@
-streamlit
+streamlit>=1.44
 numpy
 pandas
 scipy
-statsmodels
 yfinance
-pandas-datareader
-scikit-learn
 plotly
-matplotlib
 pyyaml
 requests

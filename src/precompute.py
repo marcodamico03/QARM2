@@ -21,13 +21,13 @@ def main(robustness=False):
     data = B.load_backtest_data()
     from src import allocation as A
     data2 = A.load_data(base)
-    names = ["backtest2"] + (["backtest", "prior", "robustness"] if robustness else [])
+    names = ["story"] + (["backtest", "prior", "robustness"] if robustness else [])
     for persona in base["personas"]:
         for name in names:
-            params = A.client_params(persona, None, base) if name == "backtest2" else D.client_params(persona, None, base)
+            params = A.client_params(persona, None, base) if name == "story" else D.client_params(persona, None, base)
             start = time.time()
             was_saved = D.saved(name, params) is not None
-            D.remember(name, params, data2 if name == "backtest2" else data)
+            D.remember(name, params, data2 if name == "story" else data)
             print(f"{persona:18s} {name:11s} {'already saved' if was_saved else 'computed'}"
                   f"  {time.time() - start:5.1f} s")
     print(f"Saved in {D.CACHE_DIR}")

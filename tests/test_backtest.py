@@ -1,7 +1,7 @@
-"""Tests of src/backtest.py with known answers (contract, section 6).
+"""Tests of src/backtest.py with known answers.
 
 Run from the project folder (about one minute):
-    python notebooks/test_backtest.py
+    python tests/test_backtest.py
 """
 import copy
 import os
@@ -201,7 +201,7 @@ def test_metric_formulas():
 
 
 def test_wrong_beta_theory():
-    # Proposal 4.2 / contract 6: a hedge h against a true exposure beta saves variance
+    # Theory: a hedge h against a true exposure beta saves variance
     # beta^2 - (beta - h)^2 = h (2 beta - h). Total wealth = beta x s + other risk (unrelated to s);
     # the hedged one = (beta - h) x s + the same. The risk part of the gain must be h(2 beta - h) var(s) x 12/(2 gamma).
     rng = np.random.default_rng(3)
