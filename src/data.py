@@ -431,7 +431,7 @@ def _read_saved(params, file):
 
 
 def load_returns(start=None, end=None, params=None):
-    """CONTRACT: monthly CHF simple returns in decimals, one column per asset
+    """Monthly CHF simple returns in decimals, one column per asset
     (EQ_WORLD, BANKS_EU, EQ_CH, BOND_CHF, BOND_GLB_H, REIT_CH, GOLD, EMPLOYER),
     month-end index named 'date'. start/end as 'YYYY-MM-DD' (None = full sample).
     These are total returns: excess returns = load_returns() minus load_rf()."""
@@ -457,7 +457,7 @@ def load_universe2_returns(start=None, end=None, params=None):
 
 
 def load_rf(start=None, end=None, params=None):
-    """CONTRACT: monthly CHF risk-free rate (Series named RF_CHF), same index as load_returns."""
+    """Monthly CHF risk-free rate (Series named RF_CHF), same index as load_returns."""
     if params is None:
         params = load_params()
     return _read_saved(params, RF_FILE)["RF_CHF"].loc[start:end]

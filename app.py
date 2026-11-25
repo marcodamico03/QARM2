@@ -8,7 +8,7 @@ they can be sold, risk profile. The answer fits on one screen: the plan in CHF a
 backtest since 2005, the two changes against typical advice and what each was worth, and the plan by
 age. The tabs below hold the details: holdings, risk and budgets, what you give up, assumptions. Everything updates by itself; the backtest runs in the background.
 The numbers come from src/allocation.py (risk budgeting, LN5-LN6) and steps 1 to 4; the look is in
-src/theme.py. Version 1 of the app (mean-variance on total wealth) is the git tag app-v1.
+src/theme.py.
 """
 import json
 

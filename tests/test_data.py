@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import src.data as D
 from src.config import load_params
 
-CONTRACT_COLUMNS = ["EQ_WORLD", "BANKS_EU", "EQ_CH", "BOND_CHF", "BOND_GLB_H", "REIT_CH", "GOLD", "EMPLOYER"]
+CORE_COLUMNS = ["EQ_WORLD", "BANKS_EU", "EQ_CH", "BOND_CHF", "BOND_GLB_H", "REIT_CH", "GOLD", "EMPLOYER"]
 
 
 # --- 1. Formulas with known answers -------------------------------------------
@@ -133,7 +133,7 @@ def test_pipeline():
             returns, rf = D.update_data(params, verbose=False)
 
         # names, index, no holes, decimals
-        assert list(returns.columns) == CONTRACT_COLUMNS, returns.columns
+        assert list(returns.columns) == CORE_COLUMNS, returns.columns
         assert returns.index.name == "date" and rf.name == "RF_CHF"
         assert returns.notna().all().all() and rf.notna().all()
         assert returns.index.equals(rf.index)
@@ -156,7 +156,7 @@ def test_pipeline():
 
         # load functions read the saved files and cut the dates
         back = D.load_returns("2010-01-01", "2010-12-31", params=params)
-        assert len(back) == 12 and list(back.columns) == CONTRACT_COLUMNS
+        assert len(back) == 12 and list(back.columns) == CORE_COLUMNS
         assert np.allclose(back.values, returns.loc["2010"].values)
         assert len(D.load_rf("2010-01-01", "2010-12-31", params=params)) == 12
 
@@ -172,7 +172,7 @@ def test_pipeline():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             returns2, rf2, _ = D.build_data(params, verbose=False)
-        assert np.allclose(returns2[CONTRACT_COLUMNS].values, returns.values) and np.allclose(rf2.values, rf.values)
+        assert np.allclose(returns2[CORE_COLUMNS].values, returns.values) and np.allclose(rf2.values, rf.values)
         print("pipeline OK")
     finally:
         D.download_yahoo, D.download_fred, D.download_kenfrench, D.download_snb = real
