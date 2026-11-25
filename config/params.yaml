@@ -12,7 +12,7 @@ data:
   warn_abs_monthly_return: 0.40         # report: asset months above this are printed for a manual check
 
   # ---------------------------------------------------------------------------
-  # Investable universe (CONTRACT.md, section 2: the keys are the column names).
+  # Version 1 investable universe (the keys are the column names).
   # Each asset has an ordered list of sources. The FIRST source has priority
   # wherever it has data; the next sources only fill the months it is missing
   # (before it starts, after it ends, or a month removed by the cleaning).
@@ -107,7 +107,7 @@ data:
         - {type: kf_industry, file: "49_Industry_Portfolios", column: "BldMt", currency: USD}
 
   # ---------------------------------------------------------------------------
-  # Version 2 universe (docs/pivot plan): world equities split into the 12 Fama-French
+  # Version 2 universe (the one the app uses): world equities split into the 12 Fama-French
   # industries, so the client's own industry can be left out, plus corporate bonds and
   # commodities as diversifiers. Saved in data/universe2_chf.csv (load_universe2_returns).
   # Industries: value-weighted US portfolios (Kenneth French), converted to CHF.

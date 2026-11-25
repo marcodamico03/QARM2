@@ -1,4 +1,4 @@
-"""Tests of src/data.py with known answers (CONTRACT.md, section 6).
+"""Tests of src/data.py with known answers.
 
 Runs offline: the downloads are replaced by fake data, so it checks the logic
 (parsing, CHF conversion, bond formula, hedging, splicing, cleaning, saving),

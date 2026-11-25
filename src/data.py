@@ -1,4 +1,4 @@
-"""Data layer (follows docs/CONTRACT.md).
+"""Data layer (step 1).
 
 Downloads prices and rates, cleans them, converts all returns to CHF,
 and saves copies in data/ so the app keeps working if a website is down.
