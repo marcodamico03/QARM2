@@ -37,8 +37,8 @@ Requirements: Git and Python 3 (tested with Python 3.13).
 macOS / Linux:
 
 ```bash
-git clone https://github.com/marcodamico03/quant.git
-cd quant
+git clone https://github.com/marcodamico03/QARM2.git
+cd QARM2
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -49,8 +49,8 @@ streamlit run app.py
 Windows (PowerShell):
 
 ```powershell
-git clone https://github.com/marcodamico03/quant.git
-cd quant
+git clone https://github.com/marcodamico03/QARM2.git
+cd QARM2
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
