@@ -338,8 +338,7 @@ app:
   no_industry: "Public sector, or pay not linked to an industry"
   variable_pay_step: 0.05
   unlock_max_years: 10
-  pension_max: 3000000        # pension fund savings field: upper bound and step, CHF
-  pension_step: 5000
+  pension_step: 5000          # pension fund savings field: step, CHF (no upper limit)
   sector_words:              # the client's sector in a sentence ("when ... do badly")
     BANKS_EU: "European banks"
     SEC_FIN: "financial companies"
@@ -350,10 +349,9 @@ app:
     SEC_STAPLES: "food and household companies"
     SEC_ENERGY: "energy companies"
     SEC_MATERIALS: "construction and materials companies"
-  age_range: [20, 64]
-  salary_range: [30000, 500000]
-  salary_step: 5000
-  savings_range: [5000, 10000000]
+  age_range: [20, 64]        # 64: at least one year of career left before retirement_age
+  salary_step: 5000          # salary, savings and pension have no upper limit; employer shares at most the savings
+  savings_min: 5000          # savings must stay above 0: the plan divides by them
   savings_step: 5000
   shares_step: 1000
   # "How much does your pay follow your industry?": multiplier of the persona's beta_sector

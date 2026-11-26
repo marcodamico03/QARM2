@@ -138,14 +138,17 @@ with st.sidebar:
                             format_func=lambda i: INDUSTRIES.get(i, APP["no_industry"]), key="industry" + k)
     c1, c2 = st.columns([0.8, 1.2])
     age = c1.number_input("Age", *APP["age_range"], int(p["age"]), 1, key="age" + k)
-    salary = c2.number_input("Salary, CHF a year", *APP["salary_range"], int(p["salary_chf"]), APP["salary_step"],
+    # Amounts have no upper limit, except the employer shares: they are part of the savings, so at most the
+    # savings. The floors stay: no negative amounts, and savings above 0 (the plan divides by them).
+    salary = c2.number_input("Salary, CHF a year", min_value=0, value=int(p["salary_chf"]), step=APP["salary_step"],
                              key="salary" + k)
-    savings = st.number_input("Savings to invest, CHF (employer shares included)", *APP["savings_range"],
-                              int(P0["client"]["portfolio_chf"]), APP["savings_step"], key="savings" + k)
+    savings = st.number_input("Savings to invest, CHF (employer shares included)", min_value=APP["savings_min"],
+                              value=int(P0["client"]["portfolio_chf"]), step=APP["savings_step"], key="savings" + k)
     stake, unlock, variable = 0.0, 0.0, 0.0
     if industry:
-        stake = st.number_input("Of which shares of my employer, CHF", 0, int(savings),
-                                min(int(p.get("stake_chf", 0)), int(savings)), APP["shares_step"], key="stake" + k)
+        stake = st.number_input("Of which shares of my employer, CHF", min_value=0, max_value=int(savings),
+                                value=min(int(p.get("stake_chf", 0)), int(savings)), step=APP["shares_step"],
+                                key="stake" + k)
         if stake > 0:
             unlock = st.slider("They can be sold in (years)", 0, APP["unlock_max_years"], int(p.get("unlock_years", 0)),
                                key="unlock" + k)
@@ -157,8 +160,8 @@ with st.sidebar:
     pension = None
     if not self_employed:                                  # estimated from age and salary; the client can correct it
         estimate = O.pension_savings(age, salary, A.client_params(persona, None, P0))
-        pension = st.number_input("Pension fund savings, CHF", 0, APP["pension_max"], int(round(estimate, -3)),
-                                  APP["pension_step"], key=f"pension{k}_{age}_{salary}",
+        pension = st.number_input("Pension fund savings, CHF", min_value=0, value=int(round(estimate, -3)),
+                                  step=APP["pension_step"], key=f"pension{k}_{age}_{salary}",
                                   help="Our estimate from your age and salary; put the amount on your certificate.")
     profiles = list(ALLOC["profiles"])
     profile = choice("Risk profile", profiles, ALLOC["default_profile"], "profile" + k, format_func=str.capitalize)
