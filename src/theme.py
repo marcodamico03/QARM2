@@ -146,7 +146,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 [role="tab"] {{ font-family: {FONT}; }}
 [data-testid="stHeader"] {{ background: transparent; height: 0; }}
 [data-testid="stDecoration"] {{ display: none; }}
-.block-container {{ padding: 1.4rem 2rem 3rem; max-width: 1500px; }}
+.block-container {{ padding: 3.8rem 2rem 3rem; max-width: 1500px; }}   /* top: room for the toolbar of Streamlit Cloud */
 .stApp .num, .btp-table td {{ font-variant-numeric: tabular-nums; }}
 /* side panel: the client */
 [data-testid="stSidebar"] {{ background: {SIDE}; border-right: 1px solid var(--line); }}
@@ -262,7 +262,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .btp-neg {{ color: var(--sector); font-weight: 600; }}
 .stApp .btp-foot {{ color: var(--faint); font-size: .78rem; margin: 2.4rem 0 0; line-height: 1.5; }}
 @media (max-width: 900px) {{
-  .block-container {{ padding: 1rem 1rem 3rem; }}
+  .block-container {{ padding: 3.8rem 1rem 3rem; }}
   .btp-wealth {{ grid-template-columns: 1fr; }} .btp-total {{ text-align: left; }}
   .btp-hold, .btp-stats {{ grid-template-columns: 1fr; }}
 }}
