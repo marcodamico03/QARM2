@@ -465,11 +465,7 @@ def glide_path(params, mu, cov, step_years=None, mu_prior=None):
     step = step_years or params["app"]["glide_step_years"]
     age0, salary0 = float(client["age"]), float(client["salary_chf"])
     retire = client["retirement_age"]
-    sheet0 = balance_sheet(params)
-    P_scale = 1.0
-    if client.get("pillar2", True) and client.get("pension_chf") not in (None, "auto"):
-        legal = O.pension_savings(age0, salary0, params)
-        P_scale = sheet0["P"] / legal if legal > 0 else 1.0
+    P_scale = pension_scale(params)
     rf = career["rf_long_run"]
     F, stake = float(client["portfolio_chf"]), float(client["stake_chf"])
     industry = client["industry"]
@@ -491,13 +487,17 @@ def glide_path(params, mu, cov, step_years=None, mu_prior=None):
         sheet = balance_sheet(p)
         row = {}
         for kind in ("C", "A"):
-            w, _ = plan(p, mu, cov, kind, sheet=sheet)
+            w, detail = plan(p, mu, cov, kind, sheet=sheet)
             for g, v in groups(w, p).items():
                 row[(kind, g)] = v
             if kind == "C":
                 growth = rf + float(w.drop(CASH) @ mu)
+                x = w.drop(CASH).reindex(cov.columns).to_numpy()
+                vol = float(np.sqrt(x @ cov.to_numpy() @ x + detail["idio_var"]))
         row[("", "savings")] = F
         row[("", "bond-like share")] = sheet["bond_like"]
+        row[("", "expected return")] = growth                   # of our plan (C), a year, cash included
+        row[("", "volatility")] = vol
         rows[round(age, 2)] = row
         # move on: savings grow with the plan's expected return and receive the savings of the period
         saved = params["backtest"]["savings_rate"] * salary * step
@@ -508,6 +508,51 @@ def glide_path(params, mu, cov, step_years=None, mu_prior=None):
     table = pd.DataFrame(rows).T
     table.index.name = "age"
     return table
+
+
+def pension_scale(params):
+    """The pension on the client's certificate over the legal estimate (1 when the app estimates it):
+    later ages keep the same ratio."""
+    client = params["client"]
+    if not client.get("pillar2", True) or client.get("pension_chf") in (None, "auto"):
+        return 1.0
+    legal = O.pension_savings(client["age"], client["salary_chf"], params)
+    return float(client["pension_chf"]) / legal if legal > 0 else 1.0
+
+
+def savings_range(params, glide, paths=None, seed=0, quantiles=(0.05, 0.25, 0.5, 0.75, 0.95)):
+    """What the savings might be worth at each age until retirement with our plan: many simulated
+    markets, not only the expected path of glide_path.
+
+    Each year the savings earn a random return, lognormal with the expected return and volatility of
+    plan (C) at that age (from glide_path), then receive the year's savings (savings_rate x salary).
+    Years are independent, and every market follows the plan of the expected path. A fixed seed keeps
+    the page the same from one run to the next. Returns (quantiles of the savings by age, a DataFrame
+    with one column per quantile; the pension fund at retirement, CHF, 0 for the self-employed)."""
+    client, career = params["client"], params["career"]
+    paths = paths or params["app"]["range_paths"]
+    age0, retire = float(client["age"]), float(client["retirement_age"])
+    years = max(int(np.ceil(retire - age0)), 0)
+    ages = np.minimum(age0 + np.arange(years + 1), retire)
+    salary = float(client["salary_chf"]) * (1 + career["salary_growth"]) ** np.arange(years)
+    saved = params["backtest"]["savings_rate"] * salary
+    row = np.clip(glide.index.searchsorted(ages[:-1], side="right") - 1, 0, max(len(glide) - 1, 0))
+    mean = glide[("", "expected return")].to_numpy(float)[row]
+    vol = glide[("", "volatility")].to_numpy(float)[row]
+    var = np.log(1 + (vol / (1 + mean)) ** 2)                  # lognormal with this mean and volatility
+    drift = np.log(1 + mean) - var / 2
+    shocks = np.random.default_rng(seed).standard_normal((paths, years))
+    values = np.empty((paths, years + 1))
+    values[:, 0] = float(client["portfolio_chf"])
+    for t in range(years):
+        values[:, t + 1] = values[:, t] * np.exp(drift[t] + np.sqrt(var[t]) * shocks[:, t]) + saved[t]
+    table = pd.DataFrame(np.quantile(values, quantiles, axis=0).T, index=ages, columns=list(quantiles))
+    table.index.name = "age"
+    pension = 0.0
+    if client.get("pillar2", True):
+        last_salary = float(client["salary_chf"]) * (1 + career["salary_growth"]) ** (retire - age0)
+        pension = O.pension_savings(retire, last_salary, params) * pension_scale(params)
+    return table, float(pension)
 
 
 # =============================================================================

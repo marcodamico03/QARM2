@@ -146,6 +146,13 @@ def test_allocation():
     # the plan by age: more bonds near retirement
     g = AL.glide_path(p, mu, cov)
     assert g[("C", "bonds")].iloc[-1] > g[("C", "bonds")].iloc[0]
+    # the range of the savings: today is known, the outcomes spread out until retirement, same seed same page
+    fan, pension = AL.savings_range(p, g)
+    c = p["client"]
+    assert fan.index[0] == c["age"] and fan.index[-1] == c["retirement_age"]
+    assert np.allclose(fan.iloc[0], c["portfolio_chf"]) and (fan.iloc[1:].diff(axis=1).iloc[:, 1:] > 0).all().all()
+    assert fan.iloc[-1][0.95] - fan.iloc[-1][0.05] > fan.iloc[1][0.95] - fan.iloc[1][0.05]
+    assert fan.equals(AL.savings_range(p, g)[0]) and pension > 0
     # near retirement with large savings the loss limit moves part to cash
     old = AL.client_params("banker", {"age": 64, "portfolio_chf": 2_100_000, "stake_chf": 0, "profile": "prudent"}, base)
     r = AL.analyze(old, data)
