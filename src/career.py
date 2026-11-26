@@ -105,6 +105,8 @@ def present_value_and_duration(times, flows, rate):
         return 0.0, 0.0
     discounted = flows / (1 + rate) ** times
     pv = discounted.sum()
+    if pv == 0:                                          # no salary (0 CHF): no value and no duration, not 0/0
+        return 0.0, 0.0
     macaulay = (times * discounted).sum() / pv
     return pv, macaulay / (1 + rate)
 

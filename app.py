@@ -226,9 +226,17 @@ if gC["cash"] >= APP["min_weight"] * 10:
 mix = ", ".join(parts[:-1]) + " and " + parts[-1]
 html(f'<div class="btp-headline">Invest your {T.chf(F, short=False)}: <em>{mix}</em>.</div>')
 dC, dA = C_["detail"]["safe_share"], A_["detail"]["safe_share"]
-lede = (f"{T.pct(sheet['bond_like'])} of what you own already behaves like a bond (your future salary and "
-        f"pension), so your savings need {T.pct(dC)} in bonds instead of the usual {T.pct(dA)}")
+bond_like = sheet["bond_like"]                              # above 1 for a long career ahead (beta_bond > 1)
+moved = C_["detail"]["cash_from_loss_limit"]                # share of the savings the loss limit moved to cash
+if bond_like < 1:
+    lede = (f"{T.pct(bond_like)} of what you own already behaves like a bond (your future salary and pension), "
+            f"so your savings need {T.pct(dC)} in bonds instead of the usual {T.pct(dA)}")
+else:
+    lede = ("Your future salary and pension already behave like more bonds than everything you own, so your "
+            f"savings need no bonds instead of the usual {T.pct(dA)}")
 lede += f", and we leave out {ind_name.lower()}." if C_["detail"]["excluded"] else "."
+if moved >= APP["min_weight"] * 10:                         # the cash the headline shows: say where it comes from
+    lede += f" To cap a bad year, {T.pct(moved)} goes to cash and the rest shrinks in proportion."
 html(f'<p class="btp-lede">{lede}</p>')
 html(T.wealth({"H": sheet["H"], "P": sheet["P"], "F": F, "W": W}))
 
@@ -283,12 +291,17 @@ with left:
         if C_["detail"]["locked"]:
             why.append((T.SECTOR, f"<b>Your employer shares stay {unlock:.0f} more year{'s' if unlock != 1 else ''}.</b> "
                                   "The rest is built around them; then they join the plan."))
-        why.append((T.BONDS, f"<b>Your job works like a bond.</b> {T.pct(sheet['bond_like'])} of what you own does, so "
-                             f"{T.pct(dA)} × (1 − {T.pct(sheet['bond_like'])}) = {T.pct(dC)} in bonds, not {T.pct(dA)}."))
-        moved = C_["detail"]["cash_from_loss_limit"]
-        if moved > 0:
-            why.append((T.SAVINGS, f"<b>Close to retirement.</b> A bad year could cost more than you can still save, "
-                                   f"so {T.pct(moved)} goes to cash."))
+        if bond_like < 1:
+            why.append((T.BONDS, f"<b>Your job works like a bond.</b> {T.pct(bond_like)} of what you own does, so "
+                                 f"{T.pct(dA)} × (1 − {T.pct(bond_like)}) = {T.pct(dC)} in bonds, not {T.pct(dA)}."))
+        else:
+            why.append((T.BONDS, "<b>Your job works like a bond.</b> Your future salary and pension count as more "
+                                 f"bonds than everything you own, so no bonds in the savings, not {T.pct(dA)}."))
+        if moved > 0:                                       # true at any age, not only close to retirement
+            why.append((T.SAVINGS, f"<b>A cap on a bad year.</b> In a bad year (1 in 20) this mix could lose more "
+                                   f"than your {profile} profile accepts plus the "
+                                   f"{T.chf(C_['detail']['savings_left'])} you can still save before retiring, so "
+                                   f"{T.pct(moved, 0 if moved >= 0.01 else 1)} goes to cash."))
         else:
             why.append((T.SAVINGS, f"<b>A bad year (1 in 20) costs about {T.chf(C_['detail']['loss'])}.</b> "
                                    f"Within your {profile} profile, with {T.chf(C_['detail']['savings_left'])} still "
@@ -313,10 +326,12 @@ with right:
             show(fig)
             m = bt["metrics"]
             g = bt["gains"].loc["(C) vs (A)"]
+            gain, p_gain = float(g["CE gain (CHF/yr)"]), float(g["p-value"])
+            verdict = (f"better once risk is counted, {p_text(p_gain)}" if gain >= 0 else
+                       f"worse once risk is counted; it helped in {T.helped(p_gain)}")
             html(T.stats([(T.chf(values["C"].iloc[-1]), f"today with our plan, against {T.chf(values['A'].iloc[-1])} "
                            "with typical advice", T.SAVINGS),
-                          (f"{T.chf(g['CE gain (CHF/yr)'])} a year", f"better once risk is counted, {p_text(g['p-value'])}",
-                           None),
+                          (f"{T.chf(abs(gain))} a year", verdict, None),
                           (T.pct(m.loc["portfolio max drawdown", "C"]), "worst fall, against "
                            f"{T.pct(m.loc['portfolio max drawdown', 'A'])} with typical advice", None)]))
             html(f'<p class="btp-panel-note">Someone like you, {bt["start_age"]:.0f} in {first_month:%B %Y}, saving '
@@ -355,11 +370,11 @@ with st.container(key="panel_changes"):
                           f"Bonds go from {T.pct(dA)} to {T.pct(dC)}; the money goes to shares and real assets, "
                           "which earn more over time.", T.signed_chf(v1), T.GOOD if v1 >= 0 else T.SECTOR,
                           g1["p-value"] <= APP["significance"], T.helped(g1["p-value"])))
-            if excluded:
-                stake_now = C_["detail"]["stake"] if C_["detail"]["locked"] else 0.0
+            if excluded:                                    # left out because of a bonus, employer shares, or both
+                hits = [what for what, on in (("your bonus", client["variable_pay"] > 0),
+                                              ("your employer shares", client["stake_chf"] > 0)) if on]
                 html(T.change(2, f"No extra {ind_short}: no second bet on your industry",
-                              f"A bad year for {ind_short} already hits your bonus"
-                              f"{' and your employer shares' if stake_now > 0 else ''}. Leaving it out lowers the risk "
+                              f"A bad year for {ind_short} already hits {' and '.join(hits)}. Leaving it out lowers the risk "
                               "in your industry's worst months: it is insurance, not a source of profit"
                               + (f", and here its premium is {T.chf(-v2, short=False)} a year." if v2 < 0 else
                                  ". Here it also happened to earn a little."),
@@ -488,9 +503,14 @@ with tabs[2]:
             price.append((T.pct(crises.loc[gfc, "C"]), f"in the 2008 crisis; typical {T.pct(crises.loc[gfc, 'A'])}", None))
         price.append((T.pct(m.loc["total wealth volatility", "C"], 1), "everything you own swings, a year; typical "
                       f"{T.pct(m.loc['total wealth volatility', 'A'], 1)}", T.SAVINGS))
-        html('<div class="btp-h3">What you give up</div><p class="btp-p"><b>Your savings move more.</b> You are paid '
-             "for it (the two changes), and your salary, which keeps coming in a crash, absorbs it: everything you "
-             "own swings almost as little as before.</p>")
+        if m.loc["portfolio volatility", "C"] > m.loc["portfolio volatility", "A"]:
+            paid = float(bt["gains"].loc["(C) vs (A)", "CE gain (CHF/yr)"]) >= 0
+            give_up = ("<b>Your savings move more.</b> " + ("You are paid for it (the two changes), and your salary"
+                       if paid else "Your salary") + ", which keeps coming in a crash, absorbs it: everything you own "
+                       "swings almost as little as before.")
+        else:                                               # e.g. a lot of cash from the loss limit
+            give_up = "<b>Your savings do not move more than with typical advice.</b> The numbers below compare the two."
+        html(f'<div class="btp-h3">What you give up</div><p class="btp-p">{give_up}</p>')
         html(T.cards(price))
         order_c = [c for c in params["backtest"]["crises"] if c in crises.index]
         crises = crises.loc[order_c, ["A", "C"]].rename(columns=NAMES)

@@ -457,7 +457,7 @@ def analyze(params, data=None):
 
 def glide_path(params, mu, cov, step_years=None, mu_prior=None):
     """Plan (C) and (A) solved again at each age until retirement, with the balance sheet expected
-    then: salary grown, pension estimated with the legal rules (or scaled from the certificate),
+    then: salary grown, pension from today's amount plus the legal credits in between (pension_at),
     savings grown at the plan's expected return plus the savings; the stake grows with its industry
     and joins the free savings when it unlocks. The client's market view (mu vs mu_prior) fades out
     linearly over allocation view_years. Returns a DataFrame by age."""
@@ -465,7 +465,6 @@ def glide_path(params, mu, cov, step_years=None, mu_prior=None):
     step = step_years or params["app"]["glide_step_years"]
     age0, salary0 = float(client["age"]), float(client["salary_chf"])
     retire = client["retirement_age"]
-    P_scale = pension_scale(params)
     rf = career["rf_long_run"]
     F, stake = float(client["portfolio_chf"]), float(client["stake_chf"])
     industry = client["industry"]
@@ -483,7 +482,7 @@ def glide_path(params, mu, cov, step_years=None, mu_prior=None):
                            stake_chf=stake if years < client["unlock_years"] else 0.0,
                            unlock_years=max(client["unlock_years"] - years, 0.0))
         if client.get("pillar2", True):
-            p["client"]["pension_chf"] = O.pension_savings(age, salary, p) * P_scale
+            p["client"]["pension_chf"] = pension_at(params, age, salary)
         sheet = balance_sheet(p)
         row = {}
         for kind in ("C", "A"):
@@ -510,14 +509,23 @@ def glide_path(params, mu, cov, step_years=None, mu_prior=None):
     return table
 
 
-def pension_scale(params):
-    """The pension on the client's certificate over the legal estimate (1 when the app estimates it):
-    later ages keep the same ratio."""
+def pension_at(params, age, salary):
+    """The pension fund (CHF) expected at a later age, given the salary at that age; 0 without a pension fund.
+
+    As in the backtest's client path: today's amount (the certificate typed in the app, or the legal
+    estimate) earns the BVG interest rate, and the legal age credits of the years in between are added.
+    In one line: the legal estimate at that age, plus the gap between today's amount and today's legal
+    estimate grown at the BVG rate. An amount above the legal path (a buy-in, a former job) earns interest
+    but does not raise the future credits, and at 25, when the legal estimate is still 0, it still counts."""
     client = params["client"]
-    if not client.get("pillar2", True) or client.get("pension_chf") in (None, "auto"):
-        return 1.0
-    legal = O.pension_savings(client["age"], client["salary_chf"], params)
-    return float(client["pension_chf"]) / legal if legal > 0 else 1.0
+    if not client.get("pillar2", True):
+        return 0.0
+    later = O.pension_savings(age, salary, params)
+    today = client.get("pension_chf")
+    if today in (None, "auto"):
+        return later
+    gap = float(today) - O.pension_savings(client["age"], client["salary_chf"], params)
+    return later + gap * (1 + params["pension"]["interest_rate"]) ** max(age - client["age"], 0.0)
 
 
 def savings_range(params, glide, paths=None, seed=0, quantiles=(0.05, 0.25, 0.5, 0.75, 0.95)):
@@ -548,11 +556,8 @@ def savings_range(params, glide, paths=None, seed=0, quantiles=(0.05, 0.25, 0.5,
         values[:, t + 1] = values[:, t] * np.exp(drift[t] + np.sqrt(var[t]) * shocks[:, t]) + saved[t]
     table = pd.DataFrame(np.quantile(values, quantiles, axis=0).T, index=ages, columns=list(quantiles))
     table.index.name = "age"
-    pension = 0.0
-    if client.get("pillar2", True):
-        last_salary = float(client["salary_chf"]) * (1 + career["salary_growth"]) ** (retire - age0)
-        pension = O.pension_savings(retire, last_salary, params) * pension_scale(params)
-    return table, float(pension)
+    last_salary = float(client["salary_chf"]) * (1 + career["salary_growth"]) ** (retire - age0)
+    return table, float(pension_at(params, retire, last_salary))
 
 
 # =============================================================================

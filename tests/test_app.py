@@ -153,6 +153,19 @@ def test_allocation():
     assert np.allclose(fan.iloc[0], c["portfolio_chf"]) and (fan.iloc[1:].diff(axis=1).iloc[:, 1:] > 0).all().all()
     assert fan.iloc[-1][0.95] - fan.iloc[-1][0.05] > fan.iloc[1][0.95] - fan.iloc[1][0.05]
     assert fan.equals(AL.savings_range(p, g)[0]) and pension > 0
+    # the pension later on: today's amount earns the BVG rate and the legal credits are added (as in the
+    # backtest), also at 25 when the legal estimate is still 0; extra money does not raise the future credits
+    young0 = AL.client_params("civil_servant", {"age": 25, "pension_chf": 0.0}, base)
+    young2 = AL.client_params("civil_servant", {"age": 25, "pension_chf": 200_000.0}, base)
+    s65 = young0["client"]["salary_chf"] * (1 + base["career"]["salary_growth"]) ** 40
+    extra = AL.pension_at(young2, 65, s65) - AL.pension_at(young0, 65, s65)
+    assert abs(extra - 200_000 * (1 + base["pension"]["interest_rate"]) ** 40) < 1e-6
+    assert AL.pension_at(young0, 65, s65) == O.pension_savings(65, s65, young0)       # nothing yet: the legal path
+    assert AL.pension_at(young2, 25, young2["client"]["salary_chf"]) == 200_000          # today: the amount typed
+    # the plan by age sees it too (from the next step on: at 25 the bond-like share is above 1, beta_bond > 1,
+    # and adding pension moves it towards 1)
+    g0, g2 = AL.glide_path(young0, mu, cov), AL.glide_path(young2, mu, cov)
+    assert (g2[("", "bond-like share")].iloc[1:] > g0[("", "bond-like share")].iloc[1:]).all()
     # near retirement with large savings the loss limit moves part to cash
     old = AL.client_params("banker", {"age": 64, "portfolio_chf": 2_100_000, "stake_chf": 0, "profile": "prudent"}, base)
     r = AL.analyze(old, data)
@@ -273,6 +286,51 @@ def test_app_headless():
     print("the app runs for every persona and other settings, with a view, in light and dark, OK")
 
 
+def _page_text(at, wait_seconds=90):
+    """All the text of the page as one string; reruns while the backtest is still being replayed."""
+    import html as H
+    import re
+    import time
+    for _ in range(int(wait_seconds / 0.5)):
+        text = re.sub(r"\s+", " ", H.unescape(" ".join(re.sub(r"<[^>]+>", " ", m.value) for m in at.markdown)))
+        if "Replaying the past" not in text and "Running the backtest" not in text:
+            return text
+        time.sleep(0.5)
+        at.run()
+    raise AssertionError("the backtest of the page did not finish")
+
+
+def test_page_texts():
+    """The sentences of the page agree with the numbers, also in the edge cases found by a stress test:
+    a bond-like share above 100%, cash from the loss limit for a young client, a replay that loses, and
+    employer shares without a bonus."""
+    try:
+        from streamlit.testing.v1 import AppTest
+    except ImportError:
+        print("streamlit not installed, page text test skipped")
+        return
+    at = AppTest.from_file(os.path.join(ROOT, "app.py"), default_timeout=240).run()
+    assert not at.exception, at.exception
+    text = _page_text(at)
+    assert "74% of what you own already behaves like a bond" in text and "To cap a bad year" not in text
+    assert "better once risk is counted" in text and "already hits your bonus and your employer shares" in text
+    at.slider(key="variable_banker").set_value(0.0).run()            # employer shares, no bonus
+    text = _page_text(at)
+    assert "already hits your employer shares." in text and "your bonus" not in text
+    at.number_input(key="age_banker").set_value(25).run()            # a long career: beta_bond above 1
+    text = _page_text(at)
+    assert "more bonds than everything you own" in text and "of what you own already behaves" not in text
+    at.slider(key="variable_banker").set_value(0.3).run()
+    at.number_input(key="age_banker").set_value(62).run()
+    at.number_input(key="savings_banker").set_value(2_000_000).run()  # the loss limit binds; the replay loses
+    text = _page_text(at)
+    assert not at.exception, at.exception
+    assert "To cap a bad year, 3% goes to cash and the rest shrinks in proportion." in text
+    assert "A cap on a bad year." in text and "Close to retirement" not in text
+    assert "worse once risk is counted; it helped in" in text and "better once risk is counted" not in text
+    print("page texts OK")
+
+
 if __name__ == "__main__":
     test_client_params()
     test_analysis_and_lifecycle()
@@ -283,4 +341,5 @@ if __name__ == "__main__":
     test_typical_and_fewer_bonds()
     test_story_backtest()
     test_app_headless()
+    test_page_texts()
     print("ALL TESTS PASSED")
