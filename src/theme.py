@@ -123,6 +123,12 @@ def esc(text):
     return html.escape(str(text))
 
 
+def tint(color, alpha):
+    """A #RRGGBB colour as rgba with this opacity (shaded areas of a chart)."""
+    c = color.lstrip("#")
+    return f"rgba({int(c[0:2], 16)},{int(c[2:4], 16)},{int(c[4:6], 16)},{alpha})"
+
+
 # ---------------------------------------------------------------------------
 # CSS
 # ---------------------------------------------------------------------------
@@ -236,6 +242,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{ background: var(--bg);
 .stTabs [role="tab"][data-selected], .stTabs [role="tab"][aria-selected="true"] {{ color: var(--text); }}
 .stTabs .react-aria-SelectionIndicator {{ background: var(--savings) !important; }}
 .stTabs [data-baseweb="tab-highlight"] {{ background: var(--savings); }}
+[class*="st-key-panel"] .stTabs {{ margin-top: .5rem; }}
 .btp-h3 {{ font-weight: 700; font-size: 1.05rem; margin: 1.3rem 0 .2rem; }}
 .stApp .btp-p {{ color: var(--muted); font-size: .92rem; line-height: 1.55; margin: 0 0 .9rem; max-width: 90ch; }}
 .btp-p b {{ color: var(--text); font-weight: 600; }}

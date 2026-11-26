@@ -359,6 +359,7 @@ app:
   sector_link: {"Not at all": 0.0, "A little": 1.0, "A lot": 2.0}
   sector_link_default: "A little"
   glide_step_years: 2        # the plan by age is optimised again every 2 years until retirement
+  range_paths: 4000          # "What you might have": simulated markets for the range of the savings at retirement
   min_weight: 0.0005         # holdings below 0.05% are not shown
   bond_gap: 0.05             # the page says "your job already does that for you" when typical advice holds at
                              # least 5 points more bonds than ours

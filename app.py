@@ -6,7 +6,7 @@ Run from the project folder:
 One page. The client is in the side panel: industry, age, pay, savings, employer shares and when
 they can be sold, risk profile. The answer fits on one screen: the plan in CHF and why, the
 backtest since 2005, the two changes against typical advice and what each was worth, and the plan by
-age. The tabs below hold the details: holdings, risk and budgets, what you give up, assumptions. Everything updates by itself; the backtest runs in the background.
+age with the range of what the savings might be worth at retirement. The tabs below hold the details: holdings, risk and budgets, what you give up, assumptions. Everything updates by itself; the backtest runs in the background.
 The numbers come from src/allocation.py (risk budgeting, LN5-LN6) and steps 1 to 4; the look is in
 src/theme.py. The version of the app before the pivot is the git tag app-v1.
 """
@@ -73,10 +73,12 @@ def analysis(key):
 
 @st.cache_data(show_spinner=False, max_entries=64)
 def glide(key):
+    """The plan by age, and the range of what the savings might be worth until retirement."""
     persona, changes = json.loads(key)
     params = A.client_params(persona, changes, base_params())
     res = analysis(key)
-    return A.glide_path(params, res["mu"], res["cov"], mu_prior=res["mu_prior"])
+    table = A.glide_path(params, res["mu"], res["cov"], mu_prior=res["mu_prior"])
+    return table, A.savings_range(params, table)
 
 
 def background(name, params):
@@ -342,10 +344,11 @@ with st.container(key="panel_changes"):
                 connector=dict(line=dict(color=T.LINE, width=1)),
                 increasing=dict(marker=dict(color=T.GOOD)), decreasing=dict(marker=dict(color=T.SECTOR)),
                 totals=dict(marker=dict(color=T.SAVINGS)), hovertemplate="%{x}: %{text} a year<extra></extra>"))
-            low = min(0.0, v1 + (v2 if excluded else 0.0), v2 if excluded else 0.0)
-            high = max(v1, vt, v1 + (v2 if excluded else 0.0))
+            levels = [0.0, v1] + ([v1 + v2] if excluded else []) + [vt]   # where each bar starts or ends
+            low, high = min(levels), max(levels)
+            pad = 0.3 * ((high - low) or 1.0)
             fig.update_layout(**T.plot_layout(230, showlegend=False))
-            fig.update_yaxes(tickprefix="CHF ", tickformat="~s", range=[low * 1.3, high * 1.3])
+            fig.update_yaxes(tickprefix="CHF ", tickformat="~s", range=[low - pad, high + pad])
             show(fig)
         with steps_col:
             html(T.change(1, "Fewer bonds: your job is a bond",
@@ -368,27 +371,61 @@ with st.container(key="panel_changes"):
                  f"Total {T.signed_chf(vt)} a year, {p_text(gt['p-value'])}.</p>")
 
 with st.container(key="panel_glide"):
-    gl = glide(key).copy()
-    html(T.panel_title("As you get older", "bonds grow as your career shrinks"))
-    if len(gl) > 1:
-        gl.loc[retire] = gl.iloc[-1]
-        fig = go.Figure()
-        for grp in ("equities", "real", "bonds", "cash"):
-            if gl[("C", grp)].max() > APP["min_weight"]:
-                fig.add_trace(go.Scatter(x=gl.index, y=gl[("C", grp)], name=T.GROUP_NAMES[grp], stackgroup="mix",
-                                         mode="lines", line=dict(width=0, color=T.GROUP_COLORS[grp]),
-                                         fillcolor=T.GROUP_COLORS[grp],
-                                         hovertemplate=T.GROUP_NAMES[grp] + ": %{y:.0%}<extra></extra>"))
-        fig.add_trace(go.Scatter(x=gl.index, y=1 - gl[("A", "bonds")] - gl[("A", "cash")],
-                                 name="Typical advice, not bonds", mode="lines",
-                                 line=dict(color=T.TEXT, width=1.5, dash="dot"),
-                                 hovertemplate="Typical advice: %{y:.0%} outside bonds<extra></extra>"))
-        fig.update_layout(**T.plot_layout(190, hovermode="x unified", legend_traceorder="normal"))
-        fig.update_yaxes(tickformat=".0%", range=[0, 1.02])
-        show(fig)
-    html(f'<p class="btp-panel-note">Our plan solved again every {APP["glide_step_years"]} years with the wealth '
-         f"you are expected to have then. Every year a salary is paid out, so less of your wealth behaves like "
-         f"a bond and the savings hold more bonds; near retirement the loss limit adds cash.</p>")
+    gl, (fan, pension_end) = glide(key)
+    gl = gl.copy()
+    html(T.panel_title("As you get older", f"our plan until you retire at {retire:.0f}"))
+    mix_tab, range_tab = st.tabs(["Your mix", "What you might have"])
+    with mix_tab:
+        if len(gl) > 1:
+            gl.loc[retire] = gl.iloc[-1]
+            fig = go.Figure()
+            for grp in ("equities", "real", "bonds", "cash"):
+                if gl[("C", grp)].max() > APP["min_weight"]:
+                    fig.add_trace(go.Scatter(x=gl.index, y=gl[("C", grp)], name=T.GROUP_NAMES[grp],
+                                             stackgroup="mix", mode="lines",
+                                             line=dict(width=0, color=T.GROUP_COLORS[grp]),
+                                             fillcolor=T.GROUP_COLORS[grp],
+                                             hovertemplate=T.GROUP_NAMES[grp] + ": %{y:.0%}<extra></extra>"))
+            fig.add_trace(go.Scatter(x=gl.index, y=1 - gl[("A", "bonds")] - gl[("A", "cash")],
+                                     name="Typical advice, not bonds", mode="lines",
+                                     line=dict(color=T.TEXT, width=1.5, dash="dot"),
+                                     hovertemplate="Typical advice: %{y:.0%} outside bonds<extra></extra>"))
+            fig.update_layout(**T.plot_layout(190, hovermode="x unified", legend_traceorder="normal"))
+            fig.update_yaxes(tickformat=".0%", range=[0, 1.02])
+            show(fig)
+        html(f'<p class="btp-panel-note">Our plan solved again every {APP["glide_step_years"]} years with the '
+             f"wealth you are expected to have then. Every year a salary is paid out, so less of your wealth "
+             f"behaves like a bond and the savings hold more bonds; near retirement the loss limit adds cash.</p>")
+    with range_tab:
+        if len(fan) > 1:
+            end = fan.iloc[-1]
+            html(T.stats([(T.chf(end[0.5]), f"your savings at {retire:.0f}, the middle outcome", T.SAVINGS),
+                          (f"{T.chf(end[0.25])} to {T.chf(end[0.75])}", "where half of the outcomes land", None),
+                          (T.chf(end[0.05]), "a bad case: 1 in 20 ends lower", None)]))
+            fig = go.Figure()
+            for low, high, alpha in ((0.05, 0.95, 0.16), (0.25, 0.75, 0.30)):     # light band 9 in 10, dark band half
+                fig.add_trace(go.Scatter(x=fan.index, y=fan[low], mode="lines", line=dict(width=0),
+                                         hoverinfo="skip", showlegend=False))
+                fig.add_trace(go.Scatter(x=fan.index, y=fan[high], mode="lines", line=dict(width=0), fill="tonexty",
+                                         fillcolor=T.tint(T.SAVINGS, alpha), hoverinfo="skip", showlegend=False))
+            fig.add_trace(go.Scatter(
+                x=fan.index, y=fan[0.5], mode="lines", line=dict(color=T.SAVINGS, width=2), showlegend=False,
+                customdata=fan[[0.05, 0.25, 0.75, 0.95]].to_numpy(),
+                hovertemplate="Middle: CHF %{y:,.0f}<br>Half between CHF %{customdata[1]:,.0f} and "
+                              "%{customdata[2]:,.0f}<br>9 in 10 between CHF %{customdata[0]:,.0f} and "
+                              "%{customdata[3]:,.0f}<extra></extra>"))
+            fig.update_layout(**T.plot_layout(210, hovermode="x unified", margin=dict(l=4, r=8, t=12, b=4)))
+            fig.update_xaxes(hoverformat=".0f")
+            fig.update_yaxes(tickprefix="CHF ", tickformat="~s", rangemode="tozero")
+            show(fig)
+            plus = (f" On top, your pension fund should hold about {T.chf(pension_end)} at {retire:.0f}."
+                    if pension_end > 0 else "")
+            markets = f"{APP['range_paths']:,}".replace(",", "'")
+            html(f'<p class="btp-panel-note">{markets} possible markets. Each year your savings earn a random return, '
+                 f"with the expected return and the swings of our plan at that age, and you add "
+                 f"{T.pct(params['backtest']['savings_rate'])} of your salary. The line is the middle outcome, the "
+                 f"dark band holds half of the outcomes, the light band 9 in 10. In francs of the day, not adjusted "
+                 f"for inflation.{plus}</p>")
 
 # =============================================================================
 # Details
