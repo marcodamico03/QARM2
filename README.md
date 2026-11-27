@@ -2,6 +2,9 @@
 
 QARM II group project, HEC Lausanne (autumn 2026).
 
+**Live app:** https://beyond-the-portfolio.streamlit.app  
+**Repository:** https://github.com/marcodamico03/QARM2
+
 Investment advice for the savings of a Swiss employee, built around everything else the client owns: the
 career (the value today of all the salaries still to come) and the pension fund. A bank gives every balanced
 client about 60% growth and 40% bonds. For someone of working age the savings are only a few percent of their
